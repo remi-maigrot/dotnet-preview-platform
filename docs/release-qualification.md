@@ -28,6 +28,17 @@ Then the `publish` job:
 4. creates the GitHub Release with the changelog, the SBOMs, the image digests, the chart and the `devctl`
    package.
 
+## After the release: canary in production
+
+Qualification ends with a GitHub Release. Rolling it out is a separate step, and with `rollout.enabled` the
+chart rolls it out as a canary. The new version takes 10 %, then 30 %, then 60 % of the traffic, and its error
+ratio and p95 latency are checked against the SLO every 30 seconds. A version that misses them is aborted
+automatically and traffic goes back to the previous one. The reasoning is in
+[ADR 0008](adr/0008-canary-releases-with-argo-rollouts.md). The `Canary` workflow
+(`deploy/canary/e2e.sh`) proves both outcomes on a kind cluster: a version failing half of its requests is
+aborted, a healthy one is promoted. Every release is also marked on the Grafana dashboards by a post-upgrade
+hook (`grafanaAnnotation.enabled`).
+
 ## The migration gate in detail
 
 The previous release is the closest `v*.*.*` tag before the current one. The job checks it out in a

@@ -17,4 +17,9 @@ internal sealed record DevctlContext(
 
     /// <summary>How long polling loops wait between two checks. Shortened in tests.</summary>
     public TimeSpan PollInterval { get; init; } = TimeSpan.FromSeconds(3);
+
+    public Func<string, string?> EnvironmentVariable { get; init; } = Environment.GetEnvironmentVariable;
+
+    /// <summary>Sends the optional assistant requests. Replaced by a fake handler in tests.</summary>
+    public HttpClient Http { get; init; } = new() { Timeout = TimeSpan.FromSeconds(90) };
 }

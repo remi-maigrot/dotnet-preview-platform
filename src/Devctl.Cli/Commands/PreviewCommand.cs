@@ -16,6 +16,7 @@ internal static class PreviewCommand
         command.Subcommands.Add(CreateCommand(context, globals));
         command.Subcommands.Add(ListCommand(context, globals));
         command.Subcommands.Add(DeleteCommand(context, globals));
+        command.Subcommands.Add(DiagnoseCommand.Create(context, globals));
         return command;
     }
 

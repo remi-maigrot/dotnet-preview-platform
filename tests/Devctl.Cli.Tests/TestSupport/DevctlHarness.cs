@@ -7,8 +7,9 @@ namespace Devctl.Cli.Tests.TestSupport;
 /// <summary>Runs devctl in-process against fakes and captures what it prints.</summary>
 internal sealed class DevctlHarness
 {
-    public DevctlHarness(string? repositoryRoot = null)
+    public DevctlHarness(string? repositoryRoot = null, Dictionary<string, string>? environment = null, FakeHttpHandler? http = null)
     {
+        Http = http ?? new FakeHttpHandler();
         Console = new TestConsole();
         Console.Profile.Width = 200;
         Context = new DevctlContext(
@@ -17,7 +18,12 @@ internal sealed class DevctlHarness
             _ => Cluster,
             new RepositoryLocator(repositoryRoot ?? Path.GetTempPath()),
             new FakeTimeProvider(DateTimeOffset.UnixEpoch) { AutoAdvanceAmount = TimeSpan.FromSeconds(1) })
-        { PollInterval = TimeSpan.Zero, ErrorOutput = Errors };
+        {
+            PollInterval = TimeSpan.Zero,
+            ErrorOutput = Errors,
+            EnvironmentVariable = name => environment?.GetValueOrDefault(name),
+            Http = new HttpClient(Http),
+        };
     }
 
     public TestConsole Console { get; }
@@ -27,6 +33,8 @@ internal sealed class DevctlHarness
     public FakeProcessRunner Runner { get; } = new();
 
     public FakePlatformClient Cluster { get; } = new();
+
+    public FakeHttpHandler Http { get; }
 
     public DevctlContext Context { get; }
 

@@ -30,4 +30,10 @@ internal interface IPlatformClient
     Task<bool> DeletePreviewAsync(string name, CancellationToken cancellationToken);
 
     Task<ComponentHealth> GetDeploymentHealthAsync(string @namespace, string name, CancellationToken cancellationToken);
+
+    /// <summary>The preview's status and the pods, jobs and events of its namespace. Null when the preview does not exist.</summary>
+    Task<Diagnostics.PreviewSnapshot?> GetSnapshotAsync(string name, CancellationToken cancellationToken);
+
+    /// <summary>The last lines of a container's log; empty when there is none (container not started yet).</summary>
+    Task<string> GetLogAsync(string @namespace, string pod, string container, bool previous, int tailLines, CancellationToken cancellationToken);
 }

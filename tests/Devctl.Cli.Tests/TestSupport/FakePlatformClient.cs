@@ -1,3 +1,4 @@
+using Devctl.Cli.Diagnostics;
 using Devctl.Cli.Kubernetes;
 using Preview.Operator.Crds;
 
@@ -13,6 +14,13 @@ internal sealed class FakePlatformClient : IPlatformClient
     public HashSet<string> UnhealthyDeployments { get; } = [];
 
     public HashSet<string> MissingDeployments { get; } = [];
+
+    public Dictionary<string, PreviewSnapshot> Snapshots { get; } = [];
+
+    /// <summary>Log text by "pod/container", and whether each read asked for the previous run.</summary>
+    public Dictionary<string, string> Logs { get; } = [];
+
+    public List<(string Target, bool Previous)> LogReads { get; } = [];
 
     private long _generation;
 
@@ -59,4 +67,13 @@ internal sealed class FakePlatformClient : IPlatformClient
             MissingDeployments.Contains(name) ? new ComponentHealth(name, @namespace, false, "not installed") { Installed = false }
             : UnhealthyDeployments.Contains(name) ? new ComponentHealth(name, @namespace, false, "0/1 ready")
             : new ComponentHealth(name, @namespace, true, "1/1 ready"));
+
+    public Task<PreviewSnapshot?> GetSnapshotAsync(string name, CancellationToken cancellationToken) =>
+        Task.FromResult(Snapshots.GetValueOrDefault(name));
+
+    public Task<string> GetLogAsync(string @namespace, string pod, string container, bool previous, int tailLines, CancellationToken cancellationToken)
+    {
+        LogReads.Add(($"{pod}/{container}", previous));
+        return Task.FromResult(Logs.GetValueOrDefault($"{pod}/{container}", string.Empty));
+    }
 }

@@ -357,10 +357,15 @@ internal sealed class PreviewManifests
         Data = new Dictionary<string, string> { ["values.yaml"] = HelmValues() },
     };
 
-    /// <summary>Credentials of the preview database, generated once and then left untouched.</summary>
+    /// <summary>
+    /// The credentials secret (first item) is generated once and never rewritten. The two others are derived from it
+    /// and re-applied on every reconciliation, so a change to their format reaches existing previews.
+    /// </summary>
     public IReadOnlyList<V1Secret> Secrets(string postgresPassword, string appPassword, string signingKey)
     {
-        var host = $"{DatabaseName}.{Namespace}.svc";
+        // GSS encryption is disabled explicitly: there is no Kerberos here, and probing for it makes the runtime look
+        // for libgssapi, which chiseled images do not ship.
+        var server = $"Host={DatabaseName}.{Namespace}.svc;Database={Database};Gss Encryption Mode=Disable";
         return
         [
             Secret(DatabaseCredentialsSecret, new()
@@ -370,12 +375,12 @@ internal sealed class PreviewManifests
             }),
             Secret(ApiSecret, new()
             {
-                ["Database__ConnectionString"] = $"Host={host};Database={Database};Username={AppRole};Password={appPassword}",
+                ["Database__ConnectionString"] = $"{server};Username={AppRole};Password={appPassword}",
                 ["Authentication__Jwt__SigningKey"] = signingKey,
             }),
             Secret(MigratorSecret, new()
             {
-                ["Database__ConnectionString"] = $"Host={host};Database={Database};Username=postgres;Password={postgresPassword}",
+                ["Database__ConnectionString"] = $"{server};Username=postgres;Password={postgresPassword}",
             }),
         ];
     }
@@ -562,7 +567,7 @@ internal sealed class PreviewManifests
         Kind = "Secret",
         Metadata = Meta(name),
         Type = "Opaque",
-        StringData = data,
+        Data = data.ToDictionary(kv => kv.Key, kv => Encoding.UTF8.GetBytes(kv.Value)),
     };
 
     private static V1LabelSelector Selector(string key, string value) =>

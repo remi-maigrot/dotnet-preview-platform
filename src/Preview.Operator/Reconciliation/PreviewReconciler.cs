@@ -152,7 +152,7 @@ internal sealed class PreviewReconciler(
     private async Task EnsureSecretsAsync(PreviewManifests manifests, CancellationToken cancellationToken)
     {
         // Passwords are generated once. Later reconciliations rebuild the derived secrets from the stored ones,
-        // so a secret deleted by hand is recreated without breaking the database it points to.
+        // so a derived secret deleted or changed by hand is restored without breaking the database it points to.
         var stored = await cluster.GetSecretAsync(manifests.Namespace, PreviewManifests.DatabaseCredentialsSecret, cancellationToken);
         var postgresPassword = Read(stored, "POSTGRES_PASSWORD") ?? secrets.Generate(24);
         var appPassword = Read(stored, "APP_PASSWORD") ?? secrets.Generate(24);
@@ -160,9 +160,11 @@ internal sealed class PreviewReconciler(
         var api = await cluster.GetSecretAsync(manifests.Namespace, PreviewManifests.ApiSecret, cancellationToken);
         var signingKey = Read(api, "Authentication__Jwt__SigningKey") ?? secrets.Generate(48);
 
-        foreach (var secret in manifests.Secrets(postgresPassword, appPassword, signingKey))
+        var all = manifests.Secrets(postgresPassword, appPassword, signingKey);
+        await cluster.CreateSecretIfMissingAsync(all[0], cancellationToken);
+        foreach (var derived in all.Skip(1))
         {
-            await cluster.CreateSecretIfMissingAsync(secret, cancellationToken);
+            await cluster.ApplyAsync(derived, cancellationToken);
         }
     }
 

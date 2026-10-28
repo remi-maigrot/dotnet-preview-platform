@@ -83,11 +83,14 @@ public sealed class PreviewManifestsTests
     {
         var secrets = Manifests(Previews.ForPullRequest(7)).Secrets("owner-pw", "app-pw", "signing-key");
 
-        var api = secrets.Single(s => s.Metadata.Name == PreviewManifests.ApiSecret).StringData;
-        api["Database__ConnectionString"].ShouldContain("Username=app;Password=app-pw");
-        api["Authentication__Jwt__SigningKey"].ShouldBe("signing-key");
-        secrets.Single(s => s.Metadata.Name == PreviewManifests.MigratorSecret).StringData["Database__ConnectionString"]
-            .ShouldContain("Username=postgres;Password=owner-pw");
+        string Value(string secret, string key) =>
+            System.Text.Encoding.UTF8.GetString(secrets.Single(s => s.Metadata.Name == secret).Data[key]);
+
+        secrets[0].Metadata.Name.ShouldBe(PreviewManifests.DatabaseCredentialsSecret);
+        Value(PreviewManifests.ApiSecret, "Database__ConnectionString").ShouldContain("Username=app;Password=app-pw");
+        Value(PreviewManifests.ApiSecret, "Database__ConnectionString").ShouldContain("Gss Encryption Mode=Disable");
+        Value(PreviewManifests.ApiSecret, "Authentication__Jwt__SigningKey").ShouldBe("signing-key");
+        Value(PreviewManifests.MigratorSecret, "Database__ConnectionString").ShouldContain("Username=postgres;Password=owner-pw");
     }
 
     [Fact]

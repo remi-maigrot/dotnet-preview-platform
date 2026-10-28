@@ -35,7 +35,8 @@ public sealed class ReconcilerTests
         preview.Metadata.Finalizers.ShouldContain(PreviewReconciler.Finalizer);
         _cluster.Get<k8s.Models.V1Namespace>("Namespace", null, Ns).ShouldNotBeNull();
         _cluster.Get<k8s.Models.V1StatefulSet>("StatefulSet", Ns, PreviewManifests.DatabaseName).ShouldNotBeNull();
-        _cluster.SecretsCreated.ShouldBe(3);
+        _cluster.SecretsCreated.ShouldBe(1, "only the credentials are created once, derived secrets are applied");
+        _cluster.Get<k8s.Models.V1Secret>("Secret", Ns, PreviewManifests.ApiSecret).ShouldNotBeNull();
         _cluster.Jobs(Ns).ShouldBeEmpty("nothing is deployed before the database is ready");
 
         preview.Status!.Phase.ShouldBe(PreviewPhase.Provisioning);
@@ -57,7 +58,7 @@ public sealed class ReconcilerTests
         await ReconcileAsync(preview);
 
         _cluster.ApplyLog.Skip(firstPass.Count).ShouldBe(firstPass);
-        _cluster.SecretsCreated.ShouldBe(3, "generated credentials are never regenerated");
+        _cluster.SecretsCreated.ShouldBe(1, "generated credentials are never regenerated");
         Secret(PreviewManifests.DatabaseCredentialsSecret, "POSTGRES_PASSWORD").ShouldBe(password);
         _cluster.Events.Count.ShouldBe(1, "no event when the phase does not change");
     }
@@ -220,7 +221,7 @@ public sealed class ReconcilerTests
 
         await reconciler.ReconcileAsync(preview, TestContext.Current.CancellationToken);
 
-        var connection = fresh.Get<k8s.Models.V1Secret>("Secret", Ns, PreviewManifests.ApiSecret)!.StringData["Database__ConnectionString"];
+        var connection = fresh.SecretValue(Ns, PreviewManifests.ApiSecret, "Database__ConnectionString");
         connection.ShouldContain($"Password={appPassword}");
     }
 
@@ -237,8 +238,7 @@ public sealed class ReconcilerTests
         return preview;
     }
 
-    private string Secret(string name, string key) =>
-        _cluster.Get<k8s.Models.V1Secret>("Secret", Ns, name)!.StringData[key];
+    private string Secret(string name, string key) => _cluster.SecretValue(Ns, name, key);
 
     private static k8s.Models.V1Condition Condition(PreviewEnvironment preview, string type) =>
         preview.Status!.Conditions.Single(c => c.Type == type);

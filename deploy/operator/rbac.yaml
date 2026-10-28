@@ -69,10 +69,11 @@ rules:
   - apiGroups: [apps]
     resources: [statefulsets]
     verbs: [get, create, patch]
-  # Generated credentials: created once, read back to rebuild derived secrets, never updated.
+  # Generated credentials are created once and read back; the connection-string secrets derived from them are
+  # re-applied (patch) on every reconciliation.
   - apiGroups: [""]
     resources: [secrets]
-    verbs: [get, create]
+    verbs: [get, create, patch]
   # Deployment and seed jobs.
   - apiGroups: [batch]
     resources: [jobs]

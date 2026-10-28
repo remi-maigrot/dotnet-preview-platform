@@ -40,6 +40,7 @@ internal sealed class KubernetesClusterGateway(IKubernetes client, TimeProvider 
             V1Namespace => client.CoreV1.PatchNamespaceAsync(patch, name, fieldManager: Manager, force: true, cancellationToken: cancellationToken),
             V1ResourceQuota => client.CoreV1.PatchNamespacedResourceQuotaAsync(patch, name, ns, fieldManager: Manager, force: true, cancellationToken: cancellationToken),
             V1LimitRange => client.CoreV1.PatchNamespacedLimitRangeAsync(patch, name, ns, fieldManager: Manager, force: true, cancellationToken: cancellationToken),
+            V1Secret => client.CoreV1.PatchNamespacedSecretAsync(patch, name, ns, fieldManager: Manager, force: true, cancellationToken: cancellationToken),
             V1ConfigMap => client.CoreV1.PatchNamespacedConfigMapAsync(patch, name, ns, fieldManager: Manager, force: true, cancellationToken: cancellationToken),
             V1Service => client.CoreV1.PatchNamespacedServiceAsync(patch, name, ns, fieldManager: Manager, force: true, cancellationToken: cancellationToken),
             V1ServiceAccount => client.CoreV1.PatchNamespacedServiceAccountAsync(patch, name, ns, fieldManager: Manager, force: true, cancellationToken: cancellationToken),

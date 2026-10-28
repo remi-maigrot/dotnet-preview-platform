@@ -1,4 +1,3 @@
-using System.Text;
 using k8s;
 using k8s.Models;
 using Preview.Operator.Crds;
@@ -21,6 +20,9 @@ internal sealed class FakeClusterGateway : IClusterGateway
     public List<string> DeletedPreviews { get; } = [];
 
     public int SecretsCreated { get; private set; }
+
+    public string SecretValue(string ns, string name, string key) =>
+        System.Text.Encoding.UTF8.GetString(Get<V1Secret>("Secret", ns, name)!.Data[key]);
 
     public void Add(PreviewEnvironment preview) => _previews[preview.Metadata.Name] = preview;
 
@@ -91,8 +93,6 @@ internal sealed class FakeClusterGateway : IClusterGateway
         var key = Key("Secret", secret.Metadata.NamespaceProperty, secret.Metadata.Name);
         if (!_objects.ContainsKey(key))
         {
-            // The API server turns stringData into data; reproduce it so reads behave like the real thing.
-            secret.Data = secret.StringData.ToDictionary(kv => kv.Key, kv => Encoding.UTF8.GetBytes(kv.Value));
             _objects[key] = secret;
             SecretsCreated++;
         }

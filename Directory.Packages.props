@@ -44,6 +44,10 @@
     <PackageVersion Include="KubernetesClient" Version="21.0.8" />
   </ItemGroup>
 
+  <ItemGroup Label="Data">
+    <PackageVersion Include="Bogus" Version="35.6.5" />
+  </ItemGroup>
+
   <ItemGroup Label="CLI">
     <PackageVersion Include="System.CommandLine" Version="2.0.14" />
     <PackageVersion Include="Spectre.Console" Version="0.57.2" />

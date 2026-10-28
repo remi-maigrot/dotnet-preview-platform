@@ -4,6 +4,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Devctl.Cli/Devctl.Cli.csproj" />
+    <Project Path="src/Preview.DataSeeder/Preview.DataSeeder.csproj" />
     <Project Path="src/Preview.Operator.Crds/Preview.Operator.Crds.csproj" />
     <Project Path="src/Preview.Operator/Preview.Operator.csproj" />
     <Project Path="src/Sample.Api.Contracts/Sample.Api.Contracts.csproj" />
@@ -16,6 +17,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
     <Project Path="tests/Devctl.Cli.Tests/Devctl.Cli.Tests.csproj" />
+    <Project Path="tests/Preview.DataSeeder.Tests/Preview.DataSeeder.Tests.csproj" />
     <Project Path="tests/Preview.Operator.Tests/Preview.Operator.Tests.csproj" />
     <Project Path="tests/Sample.Api.IntegrationTests/Sample.Api.IntegrationTests.csproj" />
     <Project Path="tests/Sample.Api.UnitTests/Sample.Api.UnitTests.csproj" />

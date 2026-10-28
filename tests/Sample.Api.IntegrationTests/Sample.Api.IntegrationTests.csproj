@@ -1,6 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
     <ProjectReference Include="..\..\src\Sample.Api\Sample.Api.csproj" />
+    <!-- Aliased: the seeder is an executable too, and its Program class would clash with the API's. -->
+    <ProjectReference Include="..\..\src\Preview.DataSeeder\Preview.DataSeeder.csproj" Aliases="seeder" />
   </ItemGroup>
 
   <ItemGroup>

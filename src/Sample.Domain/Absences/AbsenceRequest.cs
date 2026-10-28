@@ -24,6 +24,8 @@ public sealed class AbsenceRequest
 
     public int WorkingDays { get; private set; }
 
+    /// <summary>Free text: people write names, health details or phone numbers here, so it is treated as personal data.</summary>
+    [PersonalData]
     public string? Comment { get; private set; }
 
     public AbsenceStatus Status { get; private set; }
@@ -34,6 +36,7 @@ public sealed class AbsenceRequest
 
     public Guid? DecidedBy { get; private set; }
 
+    [PersonalData]
     public string? RejectionReason { get; private set; }
 
     public static Result<AbsenceRequest> Submit(

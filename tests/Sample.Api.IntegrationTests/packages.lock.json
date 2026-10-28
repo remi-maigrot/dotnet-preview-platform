@@ -1711,6 +1711,15 @@
           "xunit.v3.runner.common": "[4.0.2]"
         }
       },
+      "preview.dataseeder": {
+        "type": "Project",
+        "dependencies": {
+          "Bogus": "[35.6.5, )",
+          "Microsoft.Extensions.Configuration.KeyPerFile": "[10.0.14, )",
+          "Microsoft.Extensions.Hosting": "[10.0.14, )",
+          "Sample.Infrastructure": "[1.0.0, )"
+        }
+      },
       "sample.api": {
         "type": "Project",
         "dependencies": {
@@ -1755,6 +1764,12 @@
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
           "Sample.Application": "[1.0.0, )"
         }
+      },
+      "Bogus": {
+        "type": "CentralTransitive",
+        "requested": "[35.6.5, )",
+        "resolved": "35.6.5",
+        "contentHash": "2FGZn+aAVHjmCgClgmGkTDBVZk0zkLvAKGaxEf5JL6b3i9JbHTE4wnuY4vHCuzlCmJdU6VZjgDfHwmYkQF8VAA=="
       },
       "EFCore.NamingConventions": {
         "type": "CentralTransitive",
@@ -1807,6 +1822,16 @@
           "Microsoft.Extensions.Caching.Memory": "10.0.14",
           "Microsoft.Extensions.Configuration.Abstractions": "10.0.14",
           "Microsoft.Extensions.Logging": "10.0.14"
+        }
+      },
+      "Microsoft.Extensions.Configuration.KeyPerFile": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.14, )",
+        "resolved": "10.0.14",
+        "contentHash": "9ycXUJk9byvfzvkQTYH3ztsWlHzmZaOVi7uVdrLth6kIGFA+z5BIgZIN1bzSIzV28dSRihbz1vHxHMq/LxTSqw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.14",
+          "Microsoft.Extensions.FileProviders.Physical": "10.0.14"
         }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {

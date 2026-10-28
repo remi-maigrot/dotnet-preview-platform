@@ -83,6 +83,14 @@ public static class DependencyInjection
         return services;
     }
 
+    /// <summary>A context outside dependency injection, for tools that talk to several databases (seeder, release checks).</summary>
+    public static AppDbContext CreateDbContext(string connectionString)
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>();
+        ConfigureDbContext(options, connectionString);
+        return new AppDbContext(options.Options);
+    }
+
     internal static void ConfigureDbContext(DbContextOptionsBuilder options, string connectionString, DatabaseOptions? database = null)
     {
         database ??= new DatabaseOptions();

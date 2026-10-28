@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Preview.DataSeeder\Preview.DataSeeder.csproj" />
+  </ItemGroup>
+</Project>

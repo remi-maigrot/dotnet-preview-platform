@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Public HTTP contracts, shared with the smoke tests and any future client. -->
+</Project>

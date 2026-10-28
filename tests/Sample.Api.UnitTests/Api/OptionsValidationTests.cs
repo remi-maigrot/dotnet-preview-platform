@@ -47,6 +47,23 @@ public sealed class OptionsValidationTests
         new HolidayCalendarOptionsValidator(Flags(external: false))
             .Validate(null, new HolidayCalendarOptions()).Succeeded.ShouldBeTrue();
 
+    [Theory]
+    [InlineData(180, 1825, true)]
+    [InlineData(1825, 1825, false)]
+    [InlineData(2000, 1825, false)]
+    public void DataRetention_FreeTextMustGoBeforeTheRequest(int freeTextDays, int requestDays, bool valid)
+    {
+        var options = new DataRetentionOptions
+        {
+            FreeTextRetention = TimeSpan.FromDays(freeTextDays),
+            RequestRetention = TimeSpan.FromDays(requestDays),
+        };
+        var results = new List<System.ComponentModel.DataAnnotations.ValidationResult>();
+
+        System.ComponentModel.DataAnnotations.Validator.TryValidateObject(options, new(options), results, validateAllProperties: true)
+            .ShouldBe(valid);
+    }
+
     private static IOptionsMonitor<FeatureFlagsOptions> Flags(bool external)
     {
         var monitor = Substitute.For<IOptionsMonitor<FeatureFlagsOptions>>();

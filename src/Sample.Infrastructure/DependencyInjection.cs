@@ -10,6 +10,7 @@ using Sample.Infrastructure.Holidays;
 using Sample.Infrastructure.Idempotency;
 using Sample.Infrastructure.Persistence;
 using Sample.Infrastructure.Persistence.Repositories;
+using Sample.Infrastructure.Retention;
 
 namespace Sample.Infrastructure;
 
@@ -32,6 +33,10 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(IdempotencyOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.AddOptions<DataRetentionOptions>()
+            .Bind(configuration.GetSection(DataRetentionOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         services.AddDbContext<AppDbContext>((sp, options) =>
         {
@@ -43,6 +48,8 @@ public static class DependencyInjection
         services.AddScoped<IAbsenceRequestRepository, AbsenceRequestRepository>();
         services.AddScoped<IIdempotencyStore, EfIdempotencyStore>();
         services.AddHostedService<IdempotencyPurgeService>();
+        services.AddScoped<DataRetentionPurger>();
+        services.AddHostedService<DataRetentionService>();
 
         services.AddSingleton<BuiltInHolidayProvider>();
         services.AddScoped<IPublicHolidayProvider, PublicHolidayProvider>();

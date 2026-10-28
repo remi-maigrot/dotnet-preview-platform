@@ -8,7 +8,7 @@ internal static class DiagnosisReport
 {
     private const int MaxEvents = 20;
 
-    public static string Render(PreviewSnapshot snapshot, IReadOnlyList<Finding> findings, IReadOnlyList<LogExcerpt> logs)
+    public static string Render(PreviewSnapshot snapshot, IReadOnlyList<Finding> findings, IReadOnlyList<LogExcerpt> logs, IReadOnlyList<ErrorTrace>? traces = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         ArgumentNullException.ThrowIfNull(findings);
@@ -72,6 +72,25 @@ internal static class DiagnosisReport
             {
                 report.AppendLine(CultureInfo.InvariantCulture, $"- {warning.Time:u} {warning.Object} {warning.Reason} (x{warning.Count}): {warning.Message}");
             }
+        }
+
+        report.AppendLine().AppendLine("## Recent failed requests (Tempo, last hour)").AppendLine();
+        if (traces is null)
+        {
+            report.AppendLine("Tempo did not answer: the observability stack is not installed, or not ready.");
+        }
+        else if (traces.Count == 0)
+        {
+            report.AppendLine("None.");
+        }
+        else
+        {
+            foreach (var trace in traces)
+            {
+                report.AppendLine(CultureInfo.InvariantCulture, $"- {trace.Start:u} {trace.Name} ({trace.DurationMs:0} ms), trace {trace.TraceId}");
+            }
+
+            report.AppendLine().AppendLine("Open one in Grafana: Explore, Tempo, paste the trace id; its logs are one click away.");
         }
 
         foreach (var log in logs)

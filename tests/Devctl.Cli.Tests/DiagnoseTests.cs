@@ -66,6 +66,31 @@ public sealed class DiagnoseTests
     }
 
     [Fact]
+    public async Task FailedRequests_AreListedFromTempo()
+    {
+        var cli = new DevctlHarness();
+        cli.Cluster.Snapshots["pr-12"] = Snapshot(Container("api")) with { Phase = "Ready" };
+        cli.Runner.On("kubectl --context k3d-preview-platform get --raw /api/v1/namespaces/observability/services/tempo:3200/proxy/api/search",
+            """{"traces":[{"traceID":"4bf92f3577b34da6a3ce929d0e0e4736","rootTraceName":"POST /v1/absence-requests/","durationMs":812,"startTimeUnixNano":"1793190066694493800"}]}""");
+
+        await cli.RunAsync("preview", "diagnose", "--pr", "12");
+
+        cli.Text.ShouldContain("POST /v1/absence-requests/ (812 ms), trace 4bf92f3577b34da6a3ce929d0e0e4736");
+        cli.Runner.Commands.ShouldContain(c => c.Contains(Uri.EscapeDataString("resource.k8s.namespace.name=\"pr-12\""), StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task WithoutTempo_TheReportSaysSoAndCarriesOn()
+    {
+        var cli = new DevctlHarness();
+        cli.Cluster.Snapshots["pr-12"] = Snapshot(Container("api")) with { Phase = "Ready" };
+        cli.Runner.On("kubectl", exitCode: 1, error: "the server could not find the requested resource");
+
+        (await cli.RunAsync("preview", "diagnose", "--pr", "12")).ShouldBe(ExitCodes.Success);
+        cli.Text.ShouldContain("Tempo did not answer");
+    }
+
+    [Fact]
     public async Task HealthyPreview_ExitsZeroAndSuggestsTheAssistant()
     {
         var cli = new DevctlHarness();

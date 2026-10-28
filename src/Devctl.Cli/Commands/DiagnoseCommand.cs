@@ -31,7 +31,8 @@ internal static class DiagnoseCommand
         command.SetAction(async (result, cancellationToken) =>
         {
             var output = globals.CreateOutput(context, result);
-            var cluster = context.Cluster(result.GetValue(globals.Context)!);
+            var kubeContext = result.GetValue(globals.Context)!;
+            var cluster = context.Cluster(kubeContext);
             var name = Platform.PreviewName(result.GetValue(pr));
 
             AssistantSettings? assistant;
@@ -54,7 +55,8 @@ internal static class DiagnoseCommand
 
             var findings = Diagnosis.Analyse(snapshot);
             var logs = await CollectLogsAsync(cluster, snapshot, cancellationToken);
-            var report = DiagnosisReport.Render(snapshot, findings, logs);
+            var traces = await ErrorTraces.FindAsync(context.Runner, kubeContext, snapshot.Namespace, context.Clock.GetUtcNow(), cancellationToken);
+            var report = DiagnosisReport.Render(snapshot, findings, logs, traces);
 
             if (result.GetValue(showPayload))
             {
@@ -86,7 +88,7 @@ internal static class DiagnoseCommand
 
             if (output.IsJson)
             {
-                output.WriteJson(new { preview = name, phase = snapshot.Phase, findings, report, explanation });
+                output.WriteJson(new { preview = name, phase = snapshot.Phase, findings, errorTraces = traces, report, explanation });
             }
             else
             {

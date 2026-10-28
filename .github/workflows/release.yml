@@ -1,0 +1,364 @@
+name: Release
+
+# Release qualification. A v* tag is a release candidate; each job below is a gate, chained with `needs`, so the
+# first failing gate stops the release and is visible as such in the run graph. Only when every gate is green are
+# the images promoted (version tag) and the GitHub Release published. See docs/release-qualification.md.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  IMAGES: sample-api sample-migrator preview-operator sample-deployer sample-seeder
+
+jobs:
+  tests:
+    name: "Gate 1: unit and integration tests"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Tests with the coverage gate
+        run: dotnet run --project build -- --target Test
+
+  architecture:
+    name: "Gate 2: architecture rules"
+    needs: tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - run: dotnet test --project tests/Architecture.Tests --configuration Release
+
+  migrations:
+    name: "Gate 3: migrations (empty database and previous release)"
+    needs: architecture
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+        env:
+          POSTGRES_PASSWORD: release-check
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      SERVER: Host=localhost;Port=5432;Username=postgres;Password=release-check;Gss Encryption Mode=Disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Apply every migration to an empty database
+        env:
+          Database__ConnectionString: ${{ env.SERVER }};Database=fresh
+        run: |
+          psql "postgresql://postgres:release-check@localhost:5432/postgres" -c "CREATE DATABASE fresh"
+          dotnet run --project src/Sample.Migrator --configuration Release -- apply
+
+      - name: Find the previous release
+        id: previous
+        run: |
+          previous="$(git describe --tags --abbrev=0 --match 'v*.*.*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          echo "tag=${previous}" >> "$GITHUB_OUTPUT"
+          echo "Previous release: ${previous:-none (first release)}"
+
+      - name: Build a snapshot of the previous release (its schema and its seed data)
+        if: steps.previous.outputs.tag != ''
+        env:
+          PREVIOUS: ${{ steps.previous.outputs.tag }}
+          Database__ConnectionString: ${{ env.SERVER }};Database=snapshot
+        run: |
+          psql "postgresql://postgres:release-check@localhost:5432/postgres" -c "CREATE DATABASE snapshot"
+          git worktree add ../previous "$PREVIOUS"
+          dotnet run --project ../previous/src/Sample.Migrator --configuration Release -- apply
+          if [ -d ../previous/src/Preview.DataSeeder ]; then
+            dotnet run --project ../previous/src/Preview.DataSeeder --configuration Release -- synthetic
+          fi
+
+      - name: Upgrade the snapshot with this release's migrations
+        if: steps.previous.outputs.tag != ''
+        env:
+          Database__ConnectionString: ${{ env.SERVER }};Database=snapshot
+        run: |
+          dotnet run --project src/Sample.Migrator --configuration Release -- apply
+          dotnet run --project src/Sample.Migrator --configuration Release -- list
+
+  images:
+    name: Build and push the release candidate images
+    needs: migrations
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      registry: ${{ steps.registry.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: registry
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - name: Multi-arch images tagged with the commit SHA
+        env:
+          REGISTRY: ${{ steps.registry.outputs.name }}
+        run: |
+          dotnet run --project build -- --target Docker-Build --registry "$REGISTRY" --image-tag "$GITHUB_SHA" \
+            --version "${GITHUB_REF_NAME#v}" --platforms linux/amd64,linux/arm64 --push=true
+
+  scan:
+    name: "Gate 4: no critical CVE (Trivy)"
+    needs: images
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    env:
+      REGISTRY: ${{ needs.images.outputs.registry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.1
+          cache: true
+      - name: Scan every image, both architectures
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ github.token }}
+        run: |
+          for image in $IMAGES; do
+            for platform in linux/amd64 linux/arm64; do
+              echo "::group::${image} (${platform})"
+              trivy image --quiet --platform "$platform" --severity CRITICAL --ignore-unfixed --exit-code 1 \
+                "${REGISTRY}/${image}:${GITHUB_SHA}"
+              echo "::endgroup::"
+            done
+          done
+      - name: Scan the Kubernetes manifests
+        run: |
+          trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 \
+            --helm-values deploy/helm/sample-api/ci/production-values.yaml deploy
+
+  sbom:
+    name: "Gate 5: SBOM"
+    needs: [images, scan]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    env:
+      REGISTRY: ${{ needs.images.outputs.registry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.1
+          cache: true
+      - name: CycloneDX SBOMs (image contents and NuGet graph)
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ github.token }}
+        run: |
+          mkdir -p artifacts/sbom
+          for image in $IMAGES; do
+            trivy image --quiet --format cyclonedx --output "artifacts/sbom/${image}.cdx.json" "${REGISTRY}/${image}:${GITHUB_SHA}"
+          done
+          dotnet tool restore
+          dotnet CycloneDX src/Sample.Api/Sample.Api.csproj --output artifacts/sbom \
+            --filename sample-api.nuget.cdx.json --output-format Json --set-version "${GITHUB_REF_NAME#v}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: artifacts/sbom
+          retention-days: 90
+
+  sign:
+    name: "Gate 6: signature and provenance (cosign keyless)"
+    needs: [images, sbom]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      REGISTRY: ${{ needs.images.outputs.registry }}
+    steps:
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sbom
+          path: sbom
+      - name: Resolve digests
+        run: |
+          : > digests.txt
+          for image in $IMAGES; do
+            digest="$(docker buildx imagetools inspect "${REGISTRY}/${image}:${GITHUB_SHA}" --format '{{json .Manifest.Digest}}' | tr -d '"')"
+            echo "${image} ${digest}" >> digests.txt
+          done
+          cat digests.txt
+      - name: Sign, attach the SBOM, verify
+        env:
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          # Keyless: the certificate is issued by Sigstore for this workflow's OIDC identity; no key to store or leak.
+          while read -r image digest; do
+            ref="${REGISTRY}/${image}@${digest}"
+            cosign sign --yes "$ref"
+            cosign attest --yes --type cyclonedx --predicate "sbom/${image}.cdx.json" "$ref"
+            cosign verify "$ref" --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          done < digests.txt
+      - name: Build provenance (SLSA) for the API image
+        id: api
+        run: echo "digest=$(awk '$1 == "sample-api" { print $2 }' digests.txt)" >> "$GITHUB_OUTPUT"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/sample-api
+          subject-digest: ${{ steps.api.outputs.digest }}
+          push-to-registry: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digests
+          path: digests.txt
+
+  smoke:
+    name: "Gate 7: smoke and load tests on a preview of the release candidate"
+    needs: [images, sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    env:
+      REGISTRY: ${{ needs.images.outputs.registry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Only deploy signed images
+        env:
+          IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          for image in $IMAGES; do
+            cosign verify "${REGISTRY}/${image}:${GITHUB_SHA}" --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com > /dev/null
+          done
+      - uses: ./.github/actions/preview-environment
+        with:
+          registry: ${{ env.REGISTRY }}
+          tag: ${{ github.sha }}
+          pull-request: "1"
+      - run: dotnet test --project tests/Smoke.Tests --configuration Release
+      - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+      - run: k6 run --quiet -e BASE_URL="$SMOKE_BASE_URL" -e SIGNING_KEY="$SMOKE_SIGNING_KEY" load/preview-smoke.js
+
+  publish:
+    name: Promote and publish the release
+    needs: [images, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      packages: write
+    env:
+      REGISTRY: ${{ needs.images.outputs.registry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Tag the qualified images with the version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for image in $IMAGES; do
+            docker buildx imagetools create --tag "${REGISTRY}/${image}:${version}" "${REGISTRY}/${image}:${GITHUB_SHA}"
+          done
+      - name: Package and push the chart and devctl
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          dotnet run --project build -- --target Publish --version "${GITHUB_REF_NAME#v}" --image-tag "${GITHUB_REF_NAME#v}" \
+            --registry "$REGISTRY" --push=true
+      - name: Changelog (Conventional Commits)
+        uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG.md
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "{sbom,digests}"
+          path: release-assets
+          merge-multiple: true
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md --verify-tag \
+            release-assets/* artifacts/packages/*

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Pure domain model: no framework or infrastructure dependency allowed (enforced by Architecture.Tests). -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Sample.Api.UnitTests" />
+  </ItemGroup>
+</Project>

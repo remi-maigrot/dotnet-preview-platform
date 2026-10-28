@@ -1,7 +1,7 @@
 using NSubstitute;
 using Sample.Api.UnitTests.TestSupport;
-using Sample.Application.Abstractions;
 using Sample.Application.Absences;
+using Sample.Application.Abstractions;
 using Sample.Application.Common;
 using Sample.Domain.Absences;
 

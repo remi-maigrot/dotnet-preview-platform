@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
-using Sample.Application.Abstractions;
 using Sample.Application.Absences;
+using Sample.Application.Abstractions;
 using Sample.Application.Common;
 using Sample.Domain.Absences;
 

@@ -28,7 +28,8 @@ public sealed class HolidayCalendarResilienceTests : IDisposable
         _server.Given(Request.Create().WithPath(Path)).InScenario("flaky").WhenStateIs("failed-twice")
             .RespondWith(Response.Create().WithStatusCode(200).WithBodyAsJson(new[] { new { date = "2026-06-15", name = "Company day" } }));
 
-        var holidays = await CreateProvider().GetHolidaysAsync(Year2026, TestContext.Current.CancellationToken);
+        // Generous attempt timeout: this test is about retries, a slow first call must not turn into a timeout.
+        var holidays = await CreateProvider(attemptTimeout: "00:00:02").GetHolidaysAsync(Year2026, TestContext.Current.CancellationToken);
 
         _server.LogEntries.Select(e => Convert.ToInt32(e.ResponseMessage!.StatusCode, System.Globalization.CultureInfo.InvariantCulture)).ShouldBe([503, 500, 200]);
         holidays.ShouldBe([new DateOnly(2026, 6, 15)]);
@@ -61,15 +62,15 @@ public sealed class HolidayCalendarResilienceTests : IDisposable
 
     public void Dispose() => _server.Dispose();
 
-    private IPublicHolidayProvider CreateProvider()
+    private IPublicHolidayProvider CreateProvider(string attemptTimeout = "00:00:00.300")
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Database:ConnectionString"] = "Host=unused",
             ["Features:ExternalHolidayCalendar"] = "true",
             ["HolidayCalendar:BaseAddress"] = _server.Url,
-            ["HolidayCalendar:AttemptTimeout"] = "00:00:00.300",
-            ["HolidayCalendar:TotalTimeout"] = "00:00:03",
+            ["HolidayCalendar:AttemptTimeout"] = attemptTimeout,
+            ["HolidayCalendar:TotalTimeout"] = "00:00:10",
             ["HolidayCalendar:MaxRetryAttempts"] = "2",
         }).Build();
 

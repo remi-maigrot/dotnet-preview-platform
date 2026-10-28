@@ -62,7 +62,11 @@ jobs:
           version: v0.33.0
           cluster_name: canary
           config: deploy/ci/kind-config.yaml
-          wait: 120s
+          # Nodes only become Ready once the network plugin is installed, in the next step.
+          wait: 0s
+
+      - name: Network plugin
+        run: deploy/ci/install-calico.sh
 
       - name: Ingress controller and images
         run: |

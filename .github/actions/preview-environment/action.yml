@@ -23,7 +23,12 @@ runs:
         version: v0.33.0
         cluster_name: preview
         config: deploy/ci/kind-config.yaml
-        wait: 120s
+        # Nodes only become Ready once the network plugin is installed, in the next step.
+        wait: 0s
+
+    - name: Install the network plugin
+      shell: bash
+      run: deploy/ci/install-calico.sh
 
     - name: Install the ingress controller
       shell: bash

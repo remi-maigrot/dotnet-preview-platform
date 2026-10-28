@@ -2,6 +2,10 @@
 # pr-<n>.preview.localtest.me (which resolves to 127.0.0.1) reaches the preview exactly as in k3d.
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+# Calico replaces kindnet (see install-calico.sh); 192.168.0.0/16 is the pod range its manifest expects.
+networking:
+  disableDefaultCNI: true
+  podSubnet: 192.168.0.0/16
 nodes:
   - role: control-plane
     extraPortMappings:

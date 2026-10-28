@@ -97,5 +97,6 @@ pseudonymised to begin with, so the logs do not contain real people either.
   would put the preview domain behind the company's identity-aware proxy.
 - **Grafana allows anonymous read-only access** in the local stack, for convenience. A shared stack would use
   single sign-on.
-- **NetworkPolicies need a CNI that enforces them.** k3s and recent kind versions do. Some managed clusters need
-  it enabled.
+- **NetworkPolicies need a CNI that enforces them, statefully.** k3s does. kindnet, the default plugin of kind,
+  drops the DNS answers to pods that have an Ingress default deny, so the CI clusters run Calico instead
+  (`deploy/ci/install-calico.sh`). Some managed clusters need enforcement enabled.

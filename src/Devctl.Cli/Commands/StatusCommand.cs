@@ -6,11 +6,17 @@ namespace Devctl.Cli.Commands;
 
 internal static class StatusCommand
 {
-    /// <summary>Deployments that make up the platform, checked in this order.</summary>
-    internal static readonly (string Namespace, string Name)[] Components =
+    /// <summary>
+    /// Deployments that make up the platform, checked in this order. The observability stack is optional
+    /// (<c>devctl up --skip-observability</c>): missing, it is reported but does not fail the command.
+    /// </summary>
+    internal static readonly (string Namespace, string Name, bool Optional)[] Components =
     [
-        ("kube-system", "traefik"),
-        (Platform.OperatorNamespace, "preview-operator"),
+        ("kube-system", "traefik", false),
+        (Platform.OperatorNamespace, "preview-operator", false),
+        (Platform.ObservabilityNamespace, "otel-collector", true),
+        (Platform.ObservabilityNamespace, "grafana", true),
+        (Platform.ObservabilityNamespace, "kps-operator", true),
     ];
 
     public static Command Create(DevctlContext context, GlobalOptions globals)
@@ -28,9 +34,12 @@ internal static class StatusCommand
 
             var cluster = context.Cluster(result.GetValue(globals.Context)!);
             var components = new List<ComponentHealth>();
-            foreach (var (ns, name) in Components)
+            var failing = false;
+            foreach (var (ns, name, optional) in Components)
             {
-                components.Add(await cluster.GetDeploymentHealthAsync(ns, name, cancellationToken));
+                var health = await cluster.GetDeploymentHealthAsync(ns, name, cancellationToken);
+                components.Add(health);
+                failing |= !health.Healthy && (health.Installed || !optional);
             }
 
             var previews = await cluster.ListPreviewsAsync(cancellationToken);
@@ -43,8 +52,8 @@ internal static class StatusCommand
                 var table = new Table().Border(TableBorder.Rounded).AddColumns("Component", "Namespace", "State");
                 foreach (var component in components)
                 {
-                    table.AddRow(component.Name, component.Namespace,
-                        component.Healthy ? $"[green]{component.Detail}[/]" : $"[red]{component.Detail}[/]");
+                    var color = component.Healthy ? "green" : component.Installed ? "red" : "grey";
+                    table.AddRow(component.Name, component.Namespace, $"[{color}]{component.Detail}[/]");
                 }
 
                 context.Console.Write(table);
@@ -54,7 +63,7 @@ internal static class StatusCommand
                 }
             }
 
-            return components.All(c => c.Healthy) ? ExitCodes.Success : ExitCodes.Failure;
+            return failing ? ExitCodes.Failure : ExitCodes.Success;
         });
         return command;
     }

@@ -11,6 +11,18 @@ public sealed class UpTests : IDisposable
     public UpTests()
     {
         File.WriteAllText(Path.Combine(_repository, "PreviewPlatform.slnx"), "<Solution />");
+        var observability = Directory.CreateDirectory(Path.Combine(_repository, "deploy", "observability")).FullName;
+        File.WriteAllText(Path.Combine(observability, "Chart.yaml"), """
+            apiVersion: v2
+            name: observability
+            dependencies:
+              - name: kube-prometheus-stack
+                repository: https://prometheus-community.github.io/helm-charts
+              - name: loki
+                repository: https://grafana.github.io/helm-charts
+              - name: tempo
+                repository: https://grafana.github.io/helm-charts
+            """);
         _cli = new DevctlHarness(_repository);
         _cli.Runner.WithHealthyTools()
             .On("git rev-parse", "1234567890ab\n")
@@ -48,6 +60,42 @@ public sealed class UpTests : IDisposable
         overlay.ShouldContain("Operator__DeployerImage=preview-registry.localhost:5050/sample-deployer:1234567890ab");
         overlay.ShouldContain("Operator__PublicPort=9090");
         _cli.Runner.Commands.ShouldContain(c => c.Contains("--port 9090:80@loadbalancer", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ObservabilityStack_IsInstalledBeforeTheApi()
+    {
+        await _cli.RunAsync("up");
+
+        var commands = _cli.Runner.Commands;
+        var install = commands.FindIndex(c => c.StartsWith("helm upgrade --install observability", StringComparison.Ordinal));
+        install.ShouldBeGreaterThan(-1);
+        commands[install].ShouldContain("--namespace observability --create-namespace --wait");
+        install.ShouldBeLessThan(commands.FindIndex(c => c.Contains("apply --kustomize", StringComparison.Ordinal)));
+        _cli.Text.ShouldContain("http://grafana.preview.localtest.me:8080");
+    }
+
+    [Fact]
+    public async Task ObservabilityStack_UsesAHelmConfigurationOfItsOwn()
+    {
+        await _cli.RunAsync("up");
+
+        var repositories = _cli.Runner.Commands.Where(c => c.StartsWith("helm repo add", StringComparison.Ordinal)).ToList();
+        repositories.Count.ShouldBe(2);
+        repositories.ShouldContain(c => c.StartsWith("helm repo add grafana https://grafana.github.io/helm-charts", StringComparison.Ordinal));
+        repositories.ShouldAllBe(c => c.Contains(Path.Combine("artifacts", "devctl", "helm", "repositories.yaml")));
+        _cli.Runner.Commands.ShouldContain(c => c.StartsWith("helm dependency build", StringComparison.Ordinal)
+            && c.Contains("--repository-config", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SkipObservability_InstallsNoChart()
+    {
+        await _cli.RunAsync("up", "--skip-observability");
+
+        _cli.Runner.Commands.ShouldNotContain(c => c.StartsWith("helm upgrade", StringComparison.Ordinal)
+            || c.StartsWith("helm repo", StringComparison.Ordinal));
+        _cli.Text.ShouldNotContain("grafana.");
     }
 
     [Fact]

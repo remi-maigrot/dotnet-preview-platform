@@ -68,7 +68,7 @@ internal sealed class KubernetesPlatformClient(IKubernetes client) : IPlatformCl
         }
         catch (HttpOperationException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound)
         {
-            return new ComponentHealth(name, @namespace, false, "not installed");
+            return new ComponentHealth(name, @namespace, false, "not installed") { Installed = false };
         }
     }
 

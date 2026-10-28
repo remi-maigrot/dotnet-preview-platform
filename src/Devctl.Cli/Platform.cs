@@ -16,7 +16,7 @@ internal static class Platform
     public const string PreviewDomain = "preview.localtest.me";
     public const string OperatorNamespace = "preview-system";
     public const string ObservabilityNamespace = "observability";
-    public const string MonitoringNamespace = "monitoring";
+    public const string GrafanaHost = "grafana." + PreviewDomain;
 
     public static readonly string[] Images = ["sample-api", "sample-migrator", "preview-operator", "sample-deployer", "sample-seeder"];
 

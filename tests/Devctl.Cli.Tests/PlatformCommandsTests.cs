@@ -35,6 +35,37 @@ public sealed class PlatformCommandsTests
     }
 
     [Fact]
+    public async Task Status_ObservabilityNotInstalled_IsNotAFailure()
+    {
+        var cli = new DevctlHarness();
+        cli.Runner.On("k3d cluster list", """[{"name":"preview-platform"}]""");
+        cli.Cluster.MissingDeployments.UnionWith(["otel-collector", "grafana", "kps-operator"]);
+
+        (await cli.RunAsync("status")).ShouldBe(ExitCodes.Success);
+        cli.Text.ShouldContain("not installed");
+    }
+
+    [Fact]
+    public async Task Status_ObservabilityInstalledButUnhealthy_Fails()
+    {
+        var cli = new DevctlHarness();
+        cli.Runner.On("k3d cluster list", """[{"name":"preview-platform"}]""");
+        cli.Cluster.UnhealthyDeployments.Add("grafana");
+
+        (await cli.RunAsync("status")).ShouldBe(ExitCodes.Failure);
+    }
+
+    [Fact]
+    public async Task Status_OperatorMissing_Fails()
+    {
+        var cli = new DevctlHarness();
+        cli.Runner.On("k3d cluster list", """[{"name":"preview-platform"}]""");
+        cli.Cluster.MissingDeployments.Add("preview-operator");
+
+        (await cli.RunAsync("status")).ShouldBe(ExitCodes.Failure);
+    }
+
+    [Fact]
     public async Task Down_WithoutCluster_HasNothingToDo()
     {
         var cli = new DevctlHarness();

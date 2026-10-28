@@ -18,11 +18,16 @@ internal static class UpCommand
             DefaultValueFactory = _ => Platform.DefaultHttpPort,
         };
         var skipBuild = new Option<bool>("--skip-build") { Description = "Reuse the images of the last build." };
+        var skipObservability = new Option<bool>("--skip-observability")
+        {
+            Description = "Do not install Prometheus, Grafana, Tempo, Loki and the collector (saves about 1.5 GB of memory).",
+        };
 
         var command = new Command("up", "Create the local cluster, install the platform and deploy the API of your working copy.")
         {
             httpPort,
             skipBuild,
+            skipObservability,
         };
         command.SetAction(async (result, cancellationToken) =>
         {
@@ -30,14 +35,15 @@ internal static class UpCommand
             var options = new UpOptions(
                 result.GetValue(globals.Context)!,
                 result.GetValue(httpPort),
-                result.GetValue(skipBuild));
+                result.GetValue(skipBuild),
+                result.GetValue(skipObservability));
             return await new LocalPlatform(context, output).UpAsync(options, cancellationToken);
         });
         return command;
     }
 }
 
-internal sealed record UpOptions(string KubeContext, int HttpPort, bool SkipBuild);
+internal sealed record UpOptions(string KubeContext, int HttpPort, bool SkipBuild, bool SkipObservability = false);
 
 /// <summary>
 /// Brings the local platform up. Every step checks the current state first, so running <c>devctl up</c> again
@@ -74,6 +80,11 @@ internal sealed class LocalPlatform(DevctlContext context, Output output)
             }
 
             await Step("Ingress", () => WaitForIngressAsync(options, cancellationToken));
+            if (!options.SkipObservability)
+            {
+                // Before the API, so that its first requests are already traced.
+                await Step("Observability", () => new ObservabilityStack(context, output).InstallAsync(root, options.KubeContext, cancellationToken));
+            }
 
             await Step("Operator", () => InstallOperatorAsync(root, tag, options, cancellationToken));
             var local = await Step("API", () => DeployLocalEnvironmentAsync(tag, options, cancellationToken));
@@ -84,7 +95,7 @@ internal sealed class LocalPlatform(DevctlContext context, Output output)
             }
             else
             {
-                Summary(local);
+                Summary(local, options);
             }
 
             return local.Phase == PreviewPhase.Ready ? ExitCodes.Success : ExitCodes.Failure;
@@ -235,11 +246,16 @@ internal sealed class LocalPlatform(DevctlContext context, Output output)
         _ => result.ToString() ?? "done",
     };
 
-    private void Summary(PreviewSummary local)
+    private void Summary(PreviewSummary local, UpOptions options)
     {
         var table = new Table().Border(TableBorder.Rounded).AddColumns("What", "Where");
         table.AddRow("API", Markup.Escape($"{local.Url}/v1/absence-requests"));
         table.AddRow("OpenAPI", Markup.Escape($"{local.Url}/openapi/v1.json"));
+        if (!options.SkipObservability)
+        {
+            table.AddRow("Grafana", Markup.Escape($"http://{Platform.GrafanaHost}:{options.HttpPort.ToString(CultureInfo.InvariantCulture)}"));
+        }
+
         table.AddRow("Previews", "devctl preview create --pr <number>");
         context.Console.Write(table);
         if (local.Phase != PreviewPhase.Ready)

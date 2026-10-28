@@ -12,7 +12,10 @@ internal sealed record PreviewSummary(int PullRequest, string Name, string Image
     public bool IsUpToDate => ObservedGeneration >= Generation;
 }
 
-internal sealed record ComponentHealth(string Name, string Namespace, bool Healthy, string Detail);
+internal sealed record ComponentHealth(string Name, string Namespace, bool Healthy, string Detail)
+{
+    public bool Installed { get; init; } = true;
+}
 
 /// <summary>What devctl reads and writes through the Kubernetes API (kubectl is only used for streaming logs).</summary>
 internal interface IPlatformClient

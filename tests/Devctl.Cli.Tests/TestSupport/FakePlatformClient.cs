@@ -12,6 +12,8 @@ internal sealed class FakePlatformClient : IPlatformClient
 
     public HashSet<string> UnhealthyDeployments { get; } = [];
 
+    public HashSet<string> MissingDeployments { get; } = [];
+
     private long _generation;
 
     public string PhaseAfterApply { get; set; } = PreviewPhase.Ready;
@@ -53,7 +55,8 @@ internal sealed class FakePlatformClient : IPlatformClient
     public Task<bool> DeletePreviewAsync(string name, CancellationToken cancellationToken) => Task.FromResult(Previews.Remove(name));
 
     public Task<ComponentHealth> GetDeploymentHealthAsync(string @namespace, string name, CancellationToken cancellationToken) =>
-        Task.FromResult(UnhealthyDeployments.Contains(name)
-            ? new ComponentHealth(name, @namespace, false, "0/1 ready")
+        Task.FromResult(
+            MissingDeployments.Contains(name) ? new ComponentHealth(name, @namespace, false, "not installed") { Installed = false }
+            : UnhealthyDeployments.Contains(name) ? new ComponentHealth(name, @namespace, false, "0/1 ready")
             : new ComponentHealth(name, @namespace, true, "1/1 ready"));
 }

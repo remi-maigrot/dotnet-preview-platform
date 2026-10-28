@@ -1,0 +1,39 @@
+# Build output
+bin/
+obj/
+artifacts/
+publish/
+
+# Tests and coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+coverage.cobertura.xml
+
+# IDE
+.vs/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+age-*.txt
+
+# Personal notes (kept out of the repository on purpose)
+INTERVIEW_NOTES.md
+
+# Cake
+tools/

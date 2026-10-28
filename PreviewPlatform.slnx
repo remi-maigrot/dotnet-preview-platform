@@ -5,6 +5,7 @@
     <Project Path="src/Sample.Application/Sample.Application.csproj" />
     <Project Path="src/Sample.Domain/Sample.Domain.csproj" />
     <Project Path="src/Sample.Infrastructure/Sample.Infrastructure.csproj" />
+    <Project Path="src/Sample.Migrator/Sample.Migrator.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Build pipeline as code. Usage: see build/README.md. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RunWorkingDirectory>$(MSBuildProjectDirectory)</RunWorkingDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Cake.Frosting" />
+  </ItemGroup>
+</Project>

@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/build/">
+    <Project Path="build/Build.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Sample.Api.Contracts/Sample.Api.Contracts.csproj" />
     <Project Path="src/Sample.Api/Sample.Api.csproj" />

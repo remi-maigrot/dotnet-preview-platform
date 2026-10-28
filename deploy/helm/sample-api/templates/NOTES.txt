@@ -1,0 +1,12 @@
+{{ include "sample-api.fullname" . }} {{ .Values.image.tag }} is deployed in namespace {{ .Release.Namespace }}.
+{{- if .Values.ingress.enabled }}
+
+  API:      http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/v1/absence-requests
+  OpenAPI:  http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.host }}/openapi/v1.json
+{{- else }}
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "sample-api.fullname" . }} 8080:{{ .Values.service.port }}
+{{- end }}
+
+Check the rollout:
+  kubectl --namespace {{ .Release.Namespace }} rollout status deploy/{{ include "sample-api.fullname" . }}

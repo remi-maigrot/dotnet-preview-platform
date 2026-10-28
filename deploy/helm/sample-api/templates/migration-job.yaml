@@ -1,0 +1,65 @@
+{{- if .Values.migrations.enabled }}
+# Runs before the new pods are created (pre-install / pre-upgrade). If it fails, Helm stops the release and
+# the pods of the previous version keep serving: a bad migration never reaches traffic. See docs/adr/0003.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sample-api.fullname" . }}-migrate
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: migrations
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "sample-api.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: migrations
+        app.kubernetes.io/part-of: preview-platform
+    spec:
+      restartPolicy: Never
+      # Hooks run before the chart's ServiceAccount exists; the job needs no API access anyway.
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "sample-api.migratorImage" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["apply"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- include "sample-api.commonEnv" . | nindent 12 }}
+            - name: Secrets__Path
+              value: /var/run/secrets/sample-migrator
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrations.resources | nindent 12 }}
+          volumeMounts:
+            - name: secrets
+              mountPath: /var/run/secrets/sample-migrator
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ required "migrations.existingSecret is required when migrations are enabled" .Values.migrations.existingSecret }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+{{- end }}

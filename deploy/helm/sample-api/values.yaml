@@ -1,0 +1,138 @@
+# Default values are production-shaped. Preview and local overrides live in ci/*.yaml and in the operator.
+
+image:
+  repository: ghcr.io/remi-maigrot/sample-api
+  # Required. Images are tagged with the git commit SHA, never "latest".
+  tag: ""
+  # Optional. When set, the image is pulled by digest (tag is kept for readability).
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 2
+
+# ASPNETCORE_ENVIRONMENT: selects appsettings.{environment}.json.
+environment: Production
+
+# Non-secret settings, injected as environment variables. "__" separates configuration sections.
+config: {}
+#  Features__AutoApproveSickLeave: "true"
+
+secrets:
+  # Required. Secret mounted as files under /var/run/secrets/sample-api, one key per setting
+  # (Database__ConnectionString, Authentication__Jwt__SigningKey). The chart never creates it.
+  existingSecret: ""
+
+migrations:
+  enabled: true
+  image:
+    repository: ghcr.io/remi-maigrot/sample-migrator
+    # Defaults to image.tag: the migrator and the API are always released together.
+    tag: ""
+    digest: ""
+  # Required when migrations are enabled. Holds Database__ConnectionString for a role allowed to run DDL.
+  existingSecret: ""
+  backoffLimit: 1
+  activeDeadlineSeconds: 300
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 192Mi
+
+opentelemetry:
+  # OTLP/gRPC endpoint of the collector. Empty disables export.
+  endpoint: ""
+  resourceAttributes: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: traefik
+  host: ""
+  annotations: {}
+  tls:
+    enabled: false
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  # maxUnavailable rather than minAvailable: with a single replica, minAvailable: 1 would block node drains.
+  maxUnavailable: 1
+
+topologySpread:
+  enabled: true
+  maxSkew: 1
+
+# Time the pod keeps serving after it is removed from the endpoints, so in-flight requests and load
+# balancers catch up before shutdown starts. Must stay below terminationGracePeriodSeconds.
+preStopSleepSeconds: 5
+terminationGracePeriodSeconds: 30
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1654
+  runAsGroup: 1654
+  fsGroup: 1654
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  privileged: false
+  capabilities:
+    drop: ["ALL"]
+
+networkPolicy:
+  enabled: true
+  # Namespace of the ingress controller allowed to reach the API.
+  ingressControllerNamespace: kube-system
+  database:
+    port: 5432
+    podSelector:
+      app.kubernetes.io/name: postgresql
+    # Empty: the database runs in the release namespace.
+    namespace: ""
+  collector:
+    namespace: observability
+    port: 4317
+  # Additional egress rules, e.g. towards the external holiday calendar when that feature is on.
+  extraEgress: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Recorded as pod annotations and used for release annotations in Grafana.
+release:
+  sha: ""
+  author: ""

@@ -1,0 +1,23 @@
+# Shape of a preview environment: one replica, no autoscaling, ingress on the PR host.
+image:
+  tag: 0123456789abcdef0123456789abcdef01234567
+replicaCount: 1
+environment: Preview
+secrets:
+  existingSecret: sample-api-secrets
+migrations:
+  existingSecret: sample-api-migrator-secrets
+autoscaling:
+  enabled: false
+ingress:
+  enabled: true
+  host: pr-42.preview.localtest.me
+config:
+  Features__AutoApproveSickLeave: "true"
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

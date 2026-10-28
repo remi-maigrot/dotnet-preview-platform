@@ -1,0 +1,18 @@
+image:
+  tag: 0123456789abcdef0123456789abcdef01234567
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+secrets:
+  existingSecret: sample-api-secrets
+migrations:
+  existingSecret: sample-api-migrator-secrets
+opentelemetry:
+  endpoint: http://otel-collector.observability:4317
+ingress:
+  enabled: true
+  host: absences.example.test
+  tls:
+    enabled: true
+    secretName: absences-tls
+release:
+  sha: 0123456789abcdef0123456789abcdef01234567
+  author: release-bot

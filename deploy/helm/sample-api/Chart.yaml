@@ -1,0 +1,13 @@
+apiVersion: v2
+name: sample-api
+description: Absence request API, deployed with its database migration job.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.30.0-0"
+home: https://github.com/remi-maigrot/dotnet-preview-platform
+sources:
+  - https://github.com/remi-maigrot/dotnet-preview-platform
+maintainers:
+  - name: Rémi Maigrot
+    url: https://github.com/remi-maigrot

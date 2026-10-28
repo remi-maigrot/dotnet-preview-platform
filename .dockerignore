@@ -10,7 +10,8 @@ coverage/
 .idea/
 .vscode/
 docs/
-deploy/
+deploy/*
+!deploy/helm/
 load/
 tests/
 build/

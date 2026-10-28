@@ -74,6 +74,8 @@ public sealed class BuildContext : FrostingContext
     [
         new("sample-api", "src/Sample.Api/Dockerfile"),
         new("sample-migrator", "src/Sample.Migrator/Dockerfile"),
+        new("preview-operator", "src/Preview.Operator/Dockerfile"),
+        new("sample-deployer", "deploy/helm/Dockerfile"),
     ];
 
     public string ImageReference(ContainerImage image) => $"{ContainerRegistry}/{image.Name}:{ImageTag}";

@@ -36,6 +36,8 @@ updates:
     directories:
       - /src/Sample.Api
       - /src/Sample.Migrator
+      - /src/Preview.Operator
+      - /deploy/helm
     schedule:
       interval: weekly
       day: monday

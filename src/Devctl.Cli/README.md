@@ -2,6 +2,20 @@
 
 Developer CLI of [dotnet-preview-platform](https://github.com/remi-maigrot/dotnet-preview-platform).
 
+## Install
+
+From a clone of the repository, pack it with the build and install it as a global tool:
+
+```bash
+dotnet run --project build -- --target Package
+dotnet tool install --global Devctl --add-source artifacts/packages --prerelease
+```
+
+Without installing, `dotnet run --project src/Devctl.Cli -- <command>` does the same from the repository root.
+Each release also attaches the package to its GitHub Release.
+
+## Commands
+
 ```bash
 devctl doctor                       # check Docker, k3d, kubectl and helm
 devctl up                           # local cluster, platform and the API of your working copy

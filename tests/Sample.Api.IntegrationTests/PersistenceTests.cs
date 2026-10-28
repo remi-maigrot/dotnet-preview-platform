@@ -51,10 +51,38 @@ public sealed class PersistenceTests(PostgresFixture postgres)
         loaded.Status.ShouldBe(AbsenceStatus.Submitted);
     }
 
+    [Fact]
+    public async Task Timestamps_AfterSaving_EqualWhatTheDatabaseReturns()
+    {
+        // PostgreSQL keeps microseconds; .NET clocks can have 100 ns ticks (they do on Linux).
+        var team = await Team.CreateAsync(postgres);
+        var submittedAt = new DateTimeOffset(2026, 3, 2, 9, 30, 15, TimeSpan.Zero).AddTicks(1_234_567);
+        await using var db = postgres.CreateDbContext();
+        var request = NewRequest(team.Alice, submittedAt);
+        db.AbsenceRequests.Add(request);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        await using var other = postgres.CreateDbContext();
+        var loaded = await other.AbsenceRequests.SingleAsync(r => r.Id == request.Id, TestContext.Current.CancellationToken);
+
+        request.SubmittedAt.ShouldBe(loaded.SubmittedAt);
+        request.SubmittedAt.ShouldBe(submittedAt.AddTicks(-7));
+    }
+
     private async Task<Guid> CreatePendingRequestAsync(Employee employee)
     {
+        var request = NewRequest(employee, DateTimeOffset.UtcNow);
+
+        await using var db = postgres.CreateDbContext();
+        db.AbsenceRequests.Add(request);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return request.Id;
+    }
+
+    private static AbsenceRequest NewRequest(Employee employee, DateTimeOffset submittedAt)
+    {
         var monday = Dates.Monday(20);
-        var request = AbsenceRequest.Submit(
+        return AbsenceRequest.Submit(
             Guid.CreateVersion7(),
             employee,
             AbsenceType.PaidLeave,
@@ -62,11 +90,6 @@ public sealed class PersistenceTests(PostgresFixture postgres)
             null,
             new HashSet<DateOnly>(),
             [],
-            DateTimeOffset.UtcNow).Value;
-
-        await using var db = postgres.CreateDbContext();
-        db.AbsenceRequests.Add(request);
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
-        return request.Id;
+            submittedAt).Value;
     }
 }

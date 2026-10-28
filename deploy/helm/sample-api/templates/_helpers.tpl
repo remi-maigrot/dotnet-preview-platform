@@ -76,6 +76,18 @@ app.kubernetes.io/component: api
 # The SDK pushes metrics every 60 s by default; Prometheus needs several points per rate() window.
 - name: OTEL_METRIC_EXPORT_INTERVAL
   value: {{ .Values.opentelemetry.metricExportIntervalMs | quote }}
+{{- $attributes := list (printf "k8s.namespace.name=%s" .Release.Namespace) "service.instance.id=$(POD_NAME)" }}
+{{- if .Values.rollout.enabled }}
+# Lets the canary analysis tell the new pods' metrics from the stable ones'. Empty outside a Rollout's pods.
+- name: POD_TEMPLATE_HASH
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.labels['rollouts-pod-template-hash']
+{{- $attributes = append $attributes "rollouts.pod_template_hash=$(POD_TEMPLATE_HASH)" }}
+{{- end }}
+{{- with .Values.opentelemetry.resourceAttributes }}
+{{- $attributes = append $attributes . }}
+{{- end }}
 - name: OTEL_RESOURCE_ATTRIBUTES
-  value: {{ printf "k8s.namespace.name=%s,service.instance.id=$(POD_NAME)%s" .Release.Namespace (ternary (printf ",%s" .Values.opentelemetry.resourceAttributes) "" (ne .Values.opentelemetry.resourceAttributes "")) | quote }}
+  value: {{ join "," $attributes | quote }}
 {{- end }}

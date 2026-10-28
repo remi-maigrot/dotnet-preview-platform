@@ -31,6 +31,24 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
+        "enable": true,
+        "iconColor": "purple",
+        "name": "Releases",
+        "target": {
+          "type": "tags",
+          "tags": [
+            "release",
+            "$namespace"
+          ],
+          "matchAny": false,
+          "limit": 100
+        }
       }
     ]
   },

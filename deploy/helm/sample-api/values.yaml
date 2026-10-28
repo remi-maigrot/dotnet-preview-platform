@@ -93,6 +93,38 @@ topologySpread:
   enabled: true
   maxSkew: 1
 
+# Canary releases with Argo Rollouts and Traefik (the Argo Rollouts controller must be installed). The canary
+# gets a growing share of traffic; the AnalysisTemplate compares its error ratio and p95 latency with the SLO
+# every interval, and aborts the rollout, back to 100 % stable, when they fail.
+rollout:
+  enabled: false
+  steps:
+    - setWeight: 10
+    - pause: { duration: 2m }
+    - setWeight: 30
+    - pause: { duration: 3m }
+    - setWeight: 60
+    - pause: { duration: 3m }
+  analysis:
+    prometheusAddress: http://kps-prometheus.observability:9090
+    interval: 30s
+    # Leaves time for the canary's first metrics to be exported (every 15 s) and scraped.
+    initialDelay: 30s
+    # Failed measurements tolerated before the rollout aborts.
+    failureLimit: 1
+    maxErrorRatio: 0.01
+    maxP95Seconds: 0.3
+  # Traefik entry points of the IngressRoute. Empty: all of them.
+  entryPoints: []
+
+# Annotates Grafana dashboards with every release (post-install and post-upgrade hook).
+grafanaAnnotation:
+  enabled: false
+  url: http://grafana.observability
+  # Secret with a Grafana service account token under the key "token" (role Editor, or annotations:write).
+  tokenSecret: ""
+  image: curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+
 # Encrypted database backups and their daily restore test. See docs/data-protection.md.
 backup:
   enabled: false

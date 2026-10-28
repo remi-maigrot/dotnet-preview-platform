@@ -1,0 +1,109 @@
+{{- if .Values.grafanaAnnotation.enabled }}
+{{- $g := .Values.grafanaAnnotation }}
+# Marks every release on the dashboards: an annotation tagged "release" with the version, the commit and who
+# shipped it. A failure here never fails the release (the job only warns), a missing marker is not an outage.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sample-api.fullname" . }}-grafana-annotation
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: release-annotation
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 60
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        {{- include "sample-api.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: release-annotation
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: annotate
+          image: {{ $g.image }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              body=$(printf '{"tags":["release","sample-api","%s"],"text":"sample-api %s (%s), revision %s, by %s"}' \
+                "$NAMESPACE" "$VERSION" "$SHA" "$REVISION" "$AUTHOR")
+              curl --silent --show-error --fail --max-time 10 -H "Authorization: Bearer $(cat /var/run/secrets/grafana/token)" \
+                -H 'Content-Type: application/json' -d "$body" "$GRAFANA_URL/api/annotations" \
+                || echo "warning: the release annotation could not be written to Grafana"
+          env:
+            - name: GRAFANA_URL
+              value: {{ $g.url | quote }}
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: VERSION
+              value: {{ .Values.image.tag | quote }}
+            - name: SHA
+              value: {{ default .Values.image.tag .Values.release.sha | trunc 12 | quote }}
+            - name: REVISION
+              value: {{ .Release.Revision | quote }}
+            - name: AUTHOR
+              value: {{ default "unknown" .Values.release.author | quote }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 32Mi }
+          volumeMounts:
+            - name: token
+              mountPath: /var/run/secrets/grafana
+              readOnly: true
+      volumes:
+        - name: token
+          secret:
+            secretName: {{ required "grafanaAnnotation.tokenSecret is required when grafanaAnnotation is enabled" $g.tokenSecret }}
+{{- if .Values.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sample-api.fullname" . }}-grafana-annotation
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: release-annotation
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-weight: "-1"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sample-api.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: release-annotation
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.collector.namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+      ports:
+        - port: 3000
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+{{- end }}
+{{- end }}

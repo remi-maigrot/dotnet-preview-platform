@@ -53,6 +53,8 @@ kube-prometheus-stack:
           - deployment.environment.name
           - k8s.namespace.name
           - preview.pull_request
+          # Set on Argo Rollout pods: the canary analysis selects the new ReplicaSet's metrics with it.
+          - rollouts.pod_template_hash
       resources:
         requests: { cpu: 100m, memory: 400Mi }
         limits: { memory: 1Gi }

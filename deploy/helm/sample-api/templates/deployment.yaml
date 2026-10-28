@@ -1,5 +1,8 @@
-apiVersion: apps/v1
-kind: Deployment
+{{- $rollout := .Values.rollout.enabled }}
+# A Deployment, or an Argo Rollout with the same pod template when rollout.enabled: the canary is then shifted by
+# Traefik weights and judged by the AnalysisTemplate (rollout.yaml). See docs/adr/0008.
+apiVersion: {{ ternary "argoproj.io/v1alpha1" "apps/v1" $rollout }}
+kind: {{ ternary "Rollout" "Deployment" $rollout }}
 metadata:
   name: {{ include "sample-api.fullname" . }}
   labels:
@@ -10,10 +13,32 @@ spec:
   {{- end }}
   revisionHistoryLimit: 5
   strategy:
+    {{- if $rollout }}
+    canary:
+      stableService: {{ include "sample-api.fullname" . }}
+      canaryService: {{ include "sample-api.fullname" . }}-canary
+      trafficRouting:
+        traefik:
+          weightedTraefikServiceName: {{ include "sample-api.fullname" . }}
+      # Starts with the first weight step: the analysis judges the canary while it takes real traffic.
+      analysis:
+        templates:
+          - templateName: {{ include "sample-api.fullname" . }}-canary
+        startingStep: 1
+        args:
+          - name: namespace
+            value: {{ .Release.Namespace }}
+          - name: canary-hash
+            valueFrom:
+              podTemplateHashValue: Latest
+      steps:
+        {{- toYaml .Values.rollout.steps | nindent 8 }}
+    {{- else }}
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 25%
       maxUnavailable: 0
+    {{- end }}
   selector:
     matchLabels:
       {{- include "sample-api.selectorLabels" . | nindent 6 }}

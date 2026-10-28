@@ -1,0 +1,102 @@
+{{- if .Values.rollout.enabled }}
+{{- $fullname := include "sample-api.fullname" . }}
+{{- $a := .Values.rollout.analysis }}
+# Canary Service: same pods as the stable Service until a rollout starts, then Argo Rollouts adds the new
+# ReplicaSet's pod-template-hash to its selector (and the stable one's to the stable Service).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}-canary
+  labels:
+    {{- include "sample-api.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "sample-api.selectorLabels" . | nindent 4 }}
+---
+# The weights are owned by Argo Rollouts: it rewrites them at every step. 100/0 is the resting state.
+apiVersion: traefik.io/v1alpha1
+kind: TraefikService
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "sample-api.labels" . | nindent 4 }}
+spec:
+  weighted:
+    services:
+      - name: {{ $fullname }}
+        port: {{ .Values.service.port }}
+        weight: 100
+      - name: {{ $fullname }}-canary
+        port: {{ .Values.service.port }}
+        weight: 0
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "sample-api.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.rollout.entryPoints }}
+  entryPoints:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  routes:
+    - kind: Rule
+      match: {{ printf "Host(`%s`)" (required "ingress.host is required when the ingress is enabled" .Values.ingress.host) | quote }}
+      services:
+        - kind: TraefikService
+          name: {{ $fullname }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    secretName: {{ required "ingress.tls.secretName is required when TLS is enabled" .Values.ingress.tls.secretName }}
+  {{- end }}
+{{- end }}
+---
+# Judges the canary pods only, on the same SLI as the SLO (docs/observability.md). Prometheus labels come
+# from OTel resource attributes: rollouts_pod_template_hash is set by the chart on Rollout pods.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ $fullname }}-canary
+  labels:
+    {{- include "sample-api.labels" . | nindent 4 }}
+spec:
+  args:
+    - name: namespace
+    - name: canary-hash
+  metrics:
+    - name: error-ratio
+      interval: {{ $a.interval }}
+      initialDelay: {{ $a.initialDelay }}
+      failureLimit: {{ $a.failureLimit }}
+      successCondition: {{ printf "result[0] <= %v" $a.maxErrorRatio | quote }}
+      provider:
+        prometheus:
+          address: {{ $a.prometheusAddress }}
+          # A canary without traffic yet counts as healthy (0): the next measurements judge it.
+          query: |
+            (
+              (sum(rate(http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="{{`{{args.namespace}}`}}", rollouts_pod_template_hash="{{`{{args.canary-hash}}`}}", http_route!~"/health/.*|/metrics", http_response_status_code=~"5.."}[1m])) or vector(0))
+              /
+              sum(rate(http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="{{`{{args.namespace}}`}}", rollouts_pod_template_hash="{{`{{args.canary-hash}}`}}", http_route!~"/health/.*|/metrics"}[1m]))
+            ) or on() vector(0)
+    - name: p95-latency
+      interval: {{ $a.interval }}
+      initialDelay: {{ $a.initialDelay }}
+      failureLimit: {{ $a.failureLimit }}
+      successCondition: {{ printf "result[0] <= %v" $a.maxP95Seconds | quote }}
+      provider:
+        prometheus:
+          address: {{ $a.prometheusAddress }}
+          query: |
+            histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="{{`{{args.namespace}}`}}", rollouts_pod_template_hash="{{`{{args.canary-hash}}`}}", http_route!~"/health/.*|/metrics"}[1m])))
+            or on() vector(0)
+{{- end }}

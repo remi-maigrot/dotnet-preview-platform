@@ -120,6 +120,15 @@ public sealed class PreviewManifestsTests
     }
 
     [Fact]
+    public void LocalEnvironment_HasItsOwnNamespaceAndHost()
+    {
+        var manifests = Manifests(Previews.ForPullRequest(0));
+
+        manifests.Namespace.ShouldBe("local");
+        manifests.Host.ShouldBe("local.preview.localtest.me");
+    }
+
+    [Fact]
     public void SeedJob_WithoutSeederImage_Throws() =>
         Should.Throw<InvalidOperationException>(() => Manifests(Previews.ForPullRequest(7)).SeedJob());
 

@@ -4,7 +4,12 @@ namespace Preview.Operator.Crds;
 
 public sealed class PreviewEnvironmentSpec
 {
-    /// <summary>Pull request number. Drives the namespace (<c>pr-42</c>) and the host (<c>pr-42.preview.localtest.me</c>).</summary>
+    public const int LocalEnvironment = 0;
+
+    /// <summary>
+    /// Pull request number. Drives the namespace (<c>pr-42</c>) and the host (<c>pr-42.preview.localtest.me</c>).
+    /// <see cref="LocalEnvironment"/> (0) is the developer's working copy deployed by <c>devctl up</c>.
+    /// </summary>
     [JsonPropertyName("pullRequest")]
     public int PullRequest { get; set; }
 

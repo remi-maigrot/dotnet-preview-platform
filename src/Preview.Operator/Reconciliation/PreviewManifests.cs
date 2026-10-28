@@ -41,7 +41,7 @@ internal sealed class PreviewManifests
         _options = options;
         _apiImage = apiImage;
         Namespace = NamespaceFor(preview.Spec.PullRequest);
-        Host = $"pr-{preview.Spec.PullRequest}.{options.PreviewDomain}";
+        Host = $"{Namespace}.{options.PreviewDomain}";
     }
 
     public string Namespace { get; }
@@ -59,7 +59,9 @@ internal sealed class PreviewManifests
 
     public string SeedJobName => $"seed-{Hash(_apiImage + "\n" + _options.SeederImage)}";
 
-    public static string NamespaceFor(int pullRequest) => $"pr-{pullRequest.ToString(CultureInfo.InvariantCulture)}";
+    public static string NamespaceFor(int pullRequest) => pullRequest == PreviewEnvironmentSpec.LocalEnvironment
+        ? "local"
+        : $"pr-{pullRequest.ToString(CultureInfo.InvariantCulture)}";
 
     /// <summary>Objects applied on every reconciliation, in dependency order.</summary>
     public IReadOnlyList<IKubernetesObject<V1ObjectMeta>> Resources() =>

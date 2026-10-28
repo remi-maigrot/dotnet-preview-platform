@@ -54,9 +54,11 @@ spec:
               properties:
                 pullRequest:
                   type: integer
-                  minimum: 1
+                  minimum: 0
                   maximum: 999999
-                  description: Pull request number; drives the namespace and the host name.
+                  description: >-
+                    Pull request number; drives the namespace (pr-<n>) and the host name. 0 is reserved for the
+                    developer's working copy deployed by `devctl up` (namespace "local").
                   x-kubernetes-validations:
                     - rule: self == oldSelf
                       message: pullRequest is immutable; create another PreviewEnvironment instead.

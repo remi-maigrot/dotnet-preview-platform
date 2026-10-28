@@ -68,6 +68,9 @@ app.kubernetes.io/component: api
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
 {{- end }}
+# The SDK pushes metrics every 60 s by default; Prometheus needs several points per rate() window.
+- name: OTEL_METRIC_EXPORT_INTERVAL
+  value: {{ .Values.opentelemetry.metricExportIntervalMs | quote }}
 - name: OTEL_RESOURCE_ATTRIBUTES
   value: {{ printf "k8s.namespace.name=%s,service.instance.id=$(POD_NAME)%s" .Release.Namespace (ternary (printf ",%s" .Values.opentelemetry.resourceAttributes) "" (ne .Values.opentelemetry.resourceAttributes "")) | quote }}
 {{- end }}

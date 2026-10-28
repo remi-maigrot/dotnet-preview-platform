@@ -46,7 +46,9 @@ internal static class ObservabilityExtensions
 
         var otel = builder.Services.AddOpenTelemetry()
             .ConfigureResource(resource => resource
-                .AddService(ServiceName, serviceVersion: ServiceVersion)
+                // The instance id comes from OTEL_RESOURCE_ATTRIBUTES (the pod name) instead of a random GUID, so a
+                // series or a log line points at a pod kubectl knows.
+                .AddService(ServiceName, serviceVersion: ServiceVersion, autoGenerateServiceInstanceId: false)
                 .AddAttributes([new("deployment.environment.name", builder.Environment.EnvironmentName)]))
             .WithTracing(tracing => tracing
                 .AddAspNetCoreInstrumentation(options =>
@@ -56,6 +58,8 @@ internal static class ObservabilityExtensions
             .WithMetrics(metrics =>
             {
                 metrics
+                    // Measurements taken inside a sampled trace keep its id: Grafana links a latency spike to a trace.
+                    .SetExemplarFilter(ExemplarFilterType.TraceBased)
                     .AddAspNetCoreInstrumentation()
                     .AddHttpClientInstrumentation()
                     .AddRuntimeInstrumentation()

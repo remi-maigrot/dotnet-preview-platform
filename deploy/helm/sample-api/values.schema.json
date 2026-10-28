@@ -74,7 +74,8 @@
       "type": "object",
       "properties": {
         "endpoint": { "type": "string", "pattern": "^(https?://.+)?$" },
-        "resourceAttributes": { "type": "string" }
+        "resourceAttributes": { "type": "string" },
+        "metricExportIntervalMs": { "type": "integer", "minimum": 1000 }
       }
     },
     "service": {

@@ -31,3 +31,18 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories:
+      - /src/Sample.Api
+      - /src/Sample.Migrator
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      dotnet-images:
+        patterns: ["dotnet/*"]

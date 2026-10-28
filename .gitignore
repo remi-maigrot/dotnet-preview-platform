@@ -41,3 +41,6 @@ tools/
 # k6 report written by load/preview-smoke.js
 load/summary.md
 __pycache__/
+
+# Upstream charts downloaded by helm dependency build (versions pinned in Chart.lock)
+deploy/observability/charts/

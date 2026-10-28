@@ -26,6 +26,7 @@ public sealed class BuildContext : FrostingContext
         Solution = new FilePath("PreviewPlatform.slnx");
         Artifacts = new DirectoryPath("artifacts");
         ChartDirectory = new DirectoryPath("deploy/helm/sample-api");
+        ObservabilityChartDirectory = new DirectoryPath("deploy/observability");
     }
 
     public string BuildConfiguration { get; }
@@ -68,6 +69,8 @@ public sealed class BuildContext : FrostingContext
     public DirectoryPath PackagesDirectory => Artifacts.Combine("packages");
 
     public DirectoryPath ChartDirectory { get; }
+
+    public DirectoryPath ObservabilityChartDirectory { get; }
 
     /// <summary>Container images built from this repository.</summary>
     public IReadOnlyList<ContainerImage> Images { get; } =

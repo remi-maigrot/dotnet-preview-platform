@@ -49,3 +49,17 @@ updates:
     groups:
       dotnet-images:
         patterns: ["dotnet/*"]
+
+  # Upstream charts of the observability stack (Chart.yaml dependencies and Chart.lock).
+  - package-ecosystem: helm
+    directory: /deploy/observability
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      observability-charts:
+        patterns: ["*"]

@@ -1,0 +1,13 @@
+{{- /* One PrometheusRule per rules file. The files stay plain Prometheus rule files so promtool can test them. */}}
+{{- range $path, $_ := .Files.Glob "rules/*.rules.yaml" }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ base $path | trimSuffix ".rules.yaml" }}
+  labels:
+    app.kubernetes.io/part-of: preview-platform
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+spec:
+{{ $.Files.Get $path | indent 2 }}
+{{- end }}

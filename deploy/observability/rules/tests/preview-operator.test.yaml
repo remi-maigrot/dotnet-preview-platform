@@ -1,0 +1,95 @@
+# promtool test rules rules/tests/preview-operator.test.yaml (run by the Cake task Observability-Check)
+rule_files:
+  - ../preview-operator.rules.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: Both replicas gone
+    interval: 1m
+    input_series:
+      - series: 'up{job="preview-operator", pod="preview-operator-a"}'
+        values: '1 1 0x10'
+      - series: 'up{job="preview-operator", pod="preview-operator-b"}'
+        values: '1 1 0x10'
+    alert_rule_test:
+      - alertname: PreviewOperatorDown
+        eval_time: 4m
+        exp_alerts: []
+      - alertname: PreviewOperatorDown
+        eval_time: 9m
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: No preview operator replica is reachable
+              description: "Nothing creates, updates or deletes previews; expired ones are not cleaned up."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+  - name: One replica down is fine, losing the lease is not
+    interval: 1m
+    input_series:
+      - series: 'up{job="preview-operator", pod="preview-operator-a"}'
+        values: '1x15'
+      - series: 'up{job="preview-operator", pod="preview-operator-b"}'
+        values: '0x15'
+      - series: 'preview_operator_leader{job="preview-operator", pod="preview-operator-a"}'
+        values: '1 1 1 0x12'
+    alert_rule_test:
+      - alertname: PreviewOperatorDown
+        eval_time: 15m
+        exp_alerts: []
+      - alertname: PreviewOperatorNoLeader
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: The preview operator replicas are up but none holds the leader lease
+              description: "Replicas run but nobody reconciles. Check the Lease preview-operator in preview-system."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+  - name: Reconciliations keep failing
+    interval: 1m
+    input_series:
+      - series: 'preview_operator_reconciliations_total{job="preview-operator", pod="preview-operator-a", result="success"}'
+        values: '0+6x40'
+      - series: 'preview_operator_reconciliations_total{job="preview-operator", pod="preview-operator-a", result="error"}'
+        values: '0+4x40'
+    alert_rule_test:
+      - alertname: PreviewReconciliationFailing
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: "40% of preview reconciliations fail"
+              description: "Errors are retried with backoff; a lasting ratio means a preview cannot converge. See the operator logs and the PreviewEnvironment events."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+  - name: A preview stays in Provisioning; the standby replica reports zero
+    interval: 1m
+    input_series:
+      - series: 'preview_environments{job="preview-operator", pod="preview-operator-a", phase="Provisioning"}'
+        values: '1x30'
+      - series: 'preview_environments{job="preview-operator", pod="preview-operator-b", phase="Provisioning"}'
+        values: '0x30'
+      - series: 'preview_environments{job="preview-operator", pod="preview-operator-a", phase="Failed"}'
+        values: '0x30'
+    alert_rule_test:
+      - alertname: PreviewEnvironmentStuck
+        eval_time: 10m
+        exp_alerts: []
+      - alertname: PreviewEnvironmentStuck
+        eval_time: 25m
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              phase: Provisioning
+            exp_annotations:
+              summary: "1 preview(s) stuck in Provisioning for 20 minutes"
+              description: "A preview is normally Ready in under a minute. kubectl get previewenvironments shows which one, its status message says why."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+      - alertname: PreviewEnvironmentFailed
+        eval_time: 25m
+        exp_alerts: []

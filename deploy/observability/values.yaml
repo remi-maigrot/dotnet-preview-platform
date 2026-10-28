@@ -1,0 +1,293 @@
+# Sized for a laptop (k3d): one replica of everything, local storage, short retention. The pipeline is the one a
+# shared cluster would run; a production setup would change replicas, object storage and retention only.
+#
+#   applications --OTLP--> otel-collector --> Prometheus (metrics, OTLP receiver)
+#                                          --> Tempo      (traces)  --> span metrics, service graph --> Prometheus
+#                                          --> Loki       (logs, OTLP endpoint)
+#   preview-operator <--scrape-- Prometheus
+
+kube-prometheus-stack:
+  fullnameOverride: kps
+  crds:
+    enabled: true
+
+  # k3s does not expose its control plane components to scraping: their rules and monitors would only alert.
+  kubeControllerManager: { enabled: false }
+  kubeScheduler: { enabled: false }
+  kubeProxy: { enabled: false }
+  kubeEtcd: { enabled: false }
+  nodeExporter: { enabled: false }
+  defaultRules:
+    rules:
+      etcd: false
+      kubeControllerManager: false
+      kubeSchedulerAlerting: false
+      kubeSchedulerRecording: false
+      kubeProxy: false
+      node: false
+      nodeExporterAlerting: false
+      nodeExporterRecording: false
+
+  kube-state-metrics:
+    fullnameOverride: kube-state-metrics
+    # Previews are labelled by the operator; exposing these labels lets the dashboards group by pull request.
+    metricLabelsAllowlist:
+      - namespaces=[app.kubernetes.io/managed-by,platform.remimaigrot.dev/pull-request]
+
+  prometheus:
+    prometheusSpec:
+      retention: 7d
+      scrapeInterval: 15s
+      # Pick up every ServiceMonitor and PrometheusRule of the cluster, not only those created by this release.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      # Applications push metrics over OTLP through the collector; Tempo writes its span metrics with remote write.
+      enableOTLPReceiver: true
+      enableRemoteWriteReceiver: true
+      enableFeatures: [exemplar-storage]
+      otlp:
+        # Resource attributes become labels: dashboards and alerts are split per environment.
+        promoteResourceAttributes:
+          - service.version
+          - deployment.environment.name
+          - k8s.namespace.name
+          - preview.pull_request
+      resources:
+        requests: { cpu: 100m, memory: 400Mi }
+        limits: { memory: 1Gi }
+
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests: { cpu: 10m, memory: 32Mi }
+        limits: { memory: 128Mi }
+    # Locally alerts are only shown in Grafana and Alertmanager. A real setup routes severity=page to the on-call
+    # tool and severity=ticket to the team's queue (receivers and their credentials come from a secret).
+    config:
+      route:
+        group_by: [alertname, k8s_namespace_name]
+        receiver: "null"
+        routes:
+          - matchers: ['alertname = "Watchdog"']
+            receiver: "null"
+      receivers:
+        - name: "null"
+
+  grafana:
+    fullnameOverride: grafana
+    # No password in this repository: the chart generates one in the grafana Secret (devctl status prints how to
+    # read it). Anonymous visitors can browse dashboards read-only.
+    grafana.ini:
+      auth.anonymous:
+        enabled: true
+        org_role: Viewer
+      analytics:
+        reporting_enabled: false
+        check_for_updates: false
+      feature_toggles:
+        enable: traceToMetrics
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts: [grafana.preview.localtest.me]
+    defaultDashboardsEnabled: true
+    defaultDashboardsTimezone: browser
+    sidecar:
+      dashboards:
+        folderAnnotation: grafana_folder
+        provider:
+          foldersFromFilesStructure: true
+      datasources:
+        # Exemplars on latency histograms link straight to the trace in Tempo.
+        exemplarTraceIdDestinations:
+          datasourceUid: tempo
+          traceIdLabelName: trace_id
+    additionalDataSources:
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        url: http://tempo:3200
+        jsonData:
+          serviceMap: { datasourceUid: prometheus }
+          nodeGraph: { enabled: true }
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: -5m
+            spanEndTimeShift: 5m
+            filterByTraceID: true
+            customQuery: true
+            query: '{service_name="$${__span.tags["service.name"]}"} | trace_id="$${__span.traceId}"'
+          tracesToMetrics:
+            datasourceUid: prometheus
+            tags: [{ key: service.name, value: job }]
+            queries:
+              - name: Request rate
+                query: sum by (http_route) (rate(http_server_request_duration_seconds_count{$$__tags}[5m]))
+      - name: Loki
+        uid: loki
+        type: loki
+        url: http://loki:3100
+        jsonData:
+          # OTLP log records carry trace_id as structured metadata: one click from a log line to its trace.
+          derivedFields:
+            - name: TraceID
+              matcherType: label
+              matcherRegex: trace_id
+              datasourceUid: tempo
+              url: "$${__value.raw}"
+    # Grafana 13 settles around 450 MB. Under 512Mi it was OOM-killed at startup, then spent 9 cores in garbage
+    # collection once running. GOMEMLIMIT makes the Go runtime collect before the kernel kills it.
+    env:
+      GOMEMLIMIT: 800MiB
+    resources:
+      requests: { cpu: 25m, memory: 512Mi }
+      limits: { memory: 1Gi }
+
+  prometheusOperator:
+    resources:
+      requests: { cpu: 10m, memory: 64Mi }
+      limits: { memory: 192Mi }
+
+loki:
+  fullnameOverride: loki
+  deploymentMode: SingleBinary
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    storage:
+      type: filesystem
+    schemaConfig:
+      configs:
+        - from: "2026-01-01"
+          store: tsdb
+          object_store: filesystem
+          schema: v13
+          index:
+            prefix: index_
+            period: 24h
+    limits_config:
+      allow_structured_metadata: true
+      retention_period: 72h
+    compactor:
+      retention_enabled: true
+      delete_request_store: filesystem
+    # service.name and k8s.namespace.name are indexed by default; the pull request number is too, so a preview's
+    # logs can be selected without scanning everything.
+    distributor:
+      otlp_config:
+        default_resource_attributes_as_index_labels:
+          - service.name
+          - service.namespace
+          - deployment.environment.name
+          - k8s.namespace.name
+          - preview.pull_request
+  singleBinary:
+    replicas: 1
+    persistence:
+      size: 2Gi
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+  read: { replicas: 0 }
+  write: { replicas: 0 }
+  backend: { replicas: 0 }
+  gateway: { enabled: false }
+  chunksCache: { enabled: false }
+  resultsCache: { enabled: false }
+  lokiCanary: { enabled: false }
+  test: { enabled: false }
+
+tempo:
+  fullnameOverride: tempo
+  tempo:
+    reportingEnabled: false
+    retention: 72h
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:4317 }
+          http: { endpoint: 0.0.0.0:4318 }
+    metricsGenerator:
+      enabled: true
+      remoteWriteUrl: http://kps-prometheus:9090/api/v1/write
+    overrides:
+      defaults:
+        metrics_generator:
+          processors: [service-graphs, span-metrics]
+    resources:
+      requests: { cpu: 25m, memory: 128Mi }
+      limits: { memory: 512Mi }
+
+opentelemetry-collector:
+  fullnameOverride: otel-collector
+  mode: deployment
+  image:
+    repository: otel/opentelemetry-collector-contrib
+  command:
+    name: otelcol-contrib
+  resources:
+    requests: { cpu: 25m, memory: 96Mi }
+    limits: { memory: 256Mi }
+  ports:
+    jaeger-compact: { enabled: false }
+    jaeger-thrift: { enabled: false }
+    jaeger-grpc: { enabled: false }
+    zipkin: { enabled: false }
+  # The chart merges `config` with its defaults (Jaeger, Zipkin...), which a subchart cannot remove: the full
+  # configuration is given here instead.
+  alternateConfig:
+    extensions:
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: "${env:MY_POD_IP}:4317" }
+          http: { endpoint: "${env:MY_POD_IP}:4318" }
+    processors:
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      batch: {}
+      # Health probes and scrapes are noise in traces.
+      filter/probes:
+        error_mode: ignore
+        traces:
+          span:
+            - 'IsMatch(attributes["url.path"], "^/(health|metrics)")'
+    exporters:
+      otlphttp/prometheus:
+        endpoint: http://kps-prometheus:9090/api/v1/otlp
+        tls: { insecure: true }
+      otlp/tempo:
+        endpoint: tempo:4317
+        tls: { insecure: true }
+      otlphttp/loki:
+        endpoint: http://loki:3100/otlp
+        tls: { insecure: true }
+    service:
+      extensions: [health_check]
+      telemetry:
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: ${env:MY_POD_IP}
+                    port: 8888
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlphttp/prometheus]
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/probes, batch]
+          exporters: [otlp/tempo]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlphttp/loki]

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: observability
+description: >-
+  The platform's observability stack in one release: an OpenTelemetry Collector in front of Prometheus, Tempo and
+  Loki, Grafana with correlated datasources, plus the dashboards and alert rules versioned in this directory.
+type: application
+version: 0.1.0
+dependencies:
+  - name: kube-prometheus-stack
+    version: 92.14.1
+    repository: https://prometheus-community.github.io/helm-charts
+  - name: loki
+    version: 7.5.0
+    repository: https://grafana.github.io/helm-charts
+  - name: tempo
+    version: 1.24.4
+    repository: https://grafana.github.io/helm-charts
+  - name: opentelemetry-collector
+    version: 0.178.0
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts

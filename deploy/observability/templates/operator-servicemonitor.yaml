@@ -1,0 +1,19 @@
+# The operator exposes Prometheus metrics on /metrics; its NetworkPolicy lets this namespace scrape it.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: preview-operator
+  labels:
+    app.kubernetes.io/part-of: preview-platform
+spec:
+  # job="preview-operator" rather than the Service name, so alerts read the same in every environment.
+  jobLabel: app.kubernetes.io/name
+  namespaceSelector:
+    matchNames: [preview-system]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: preview-operator
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s

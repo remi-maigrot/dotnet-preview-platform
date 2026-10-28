@@ -1,0 +1,136 @@
+# promtool test rules rules/tests/sample-api.test.yaml (run by the Cake task Observability-Check)
+rule_files:
+  - ../sample-api.rules.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: 10 % of requests fail in the local environment
+    interval: 1m
+    input_series:
+      # 9 requests/s answered 200 in under 300 ms, 1 request/s answered 500.
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200"}'
+        values: '0+540x90'
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="500"}'
+        values: '0+60x90'
+      - series: 'http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200", le="0.3"}'
+        values: '0+540x90'
+      - series: 'http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="500", le="0.3"}'
+        values: '0+60x90'
+    promql_expr_test:
+      - expr: round(sample_api:slo_errors:ratio_rate1h, 0.0001)
+        eval_time: 70m
+        exp_samples:
+          - labels: '{k8s_namespace_name="local", preview_pull_request="0"}'
+            value: 0.1
+    alert_rule_test:
+      - alertname: SampleApiErrorBudgetBurnFast
+        eval_time: 70m
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              slo: sample-api-availability-latency
+              k8s_namespace_name: local
+              preview_pull_request: "0"
+            exp_annotations:
+              summary: "sample-api in local is burning its error budget 14x too fast"
+              description: "10% of requests failed or took more than 300 ms over the last hour (budget 0.5 %)."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+      - alertname: SampleApiHighErrorRate
+        eval_time: 70m
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              k8s_namespace_name: local
+              preview_pull_request: "0"
+            exp_annotations:
+              summary: "More than 5 % of sample-api requests fail in local"
+              description: "10% of requests answered 5xx over the last 5 minutes."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+      # The fast burn waits for its 2 minutes of `for` before firing.
+      - alertname: SampleApiErrorBudgetBurnFast
+        eval_time: 1m
+        exp_alerts: []
+
+  - name: A pull request preview with the same errors opens a ticket but pages nobody
+    interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="pr-12", preview_pull_request="12", http_response_status_code="200"}'
+        values: '0+540x90'
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="pr-12", preview_pull_request="12", http_response_status_code="500"}'
+        values: '0+60x90'
+      - series: 'http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="pr-12", preview_pull_request="12", http_response_status_code="200", le="0.3"}'
+        values: '0+540x90'
+    alert_rule_test:
+      - alertname: SampleApiErrorBudgetBurnFast
+        eval_time: 70m
+        exp_alerts: []
+      - alertname: SampleApiErrorBudgetBurnMedium
+        eval_time: 70m
+        exp_alerts: []
+      - alertname: SampleApiHighErrorRate
+        eval_time: 70m
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              k8s_namespace_name: pr-12
+              preview_pull_request: "12"
+            exp_annotations:
+              summary: "More than 5 % of sample-api requests fail in pr-12"
+              description: "10% of requests answered 5xx over the last 5 minutes."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+
+  - name: Half of the requests take 500 ms
+    interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200"}'
+        values: '0+600x30'
+      - series: 'http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200", le="0.3"}'
+        values: '0+300x30'
+      - series: 'http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200", le="0.5"}'
+        values: '0+600x30'
+      - series: 'http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200", le="+Inf"}'
+        values: '0+600x30'
+    alert_rule_test:
+      - alertname: SampleApiHighLatency
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              k8s_namespace_name: local
+              preview_pull_request: "0"
+            exp_annotations:
+              summary: "sample-api p95 latency above 300 ms in local"
+              description: "p95 is 480ms over the last 5 minutes."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+      # No 5xx: slow requests burn the budget, they are not errors.
+      - alertname: SampleApiHighErrorRate
+        eval_time: 20m
+        exp_alerts: []
+
+  - name: Healthy traffic, failing probes and an idle preview raise nothing
+    interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200"}'
+        values: '0+600x90'
+      - series: 'http_server_request_duration_seconds_bucket{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_response_status_code="200", le="0.3"}'
+        values: '0+600x90'
+      # A failing readiness probe is not user traffic: the SLO ignores it.
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="local", preview_pull_request="0", http_route="/health/ready", http_response_status_code="503"}'
+        values: '0+60x90'
+      # One failing request every 10 minutes on a preview nobody uses.
+      - series: 'http_server_request_duration_seconds_count{job="sample-api", k8s_namespace_name="pr-7", preview_pull_request="7", http_response_status_code="500"}'
+        values: '0+0.1x90'
+    alert_rule_test:
+      - alertname: SampleApiErrorBudgetBurnFast
+        eval_time: 80m
+        exp_alerts: []
+      - alertname: SampleApiErrorBudgetBurnSlow
+        eval_time: 80m
+        exp_alerts: []
+      - alertname: SampleApiHighErrorRate
+        eval_time: 80m
+        exp_alerts: []
+      - alertname: SampleApiHighLatency
+        eval_time: 80m
+        exp_alerts: []

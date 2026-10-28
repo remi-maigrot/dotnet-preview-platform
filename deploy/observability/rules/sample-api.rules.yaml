@@ -1,0 +1,154 @@
+# SLO of the absence API, per environment (k8s_namespace_name, plus preview_pull_request for previews):
+#   99.5 % of requests over 30 days are answered without a 5xx and in 300 ms or less.
+# Health probes and scrapes are not user traffic and are left out. The error budget is therefore 0.5 %. Burn-rate alerts follow the multiwindow, multi-burn-rate method of the
+# Google SRE workbook: a long window proves the budget is really burning, a short one that it still is.
+# Tested with promtool: rules/tests/sample-api.test.yaml. Thresholds and reasoning: docs/observability.md.
+groups:
+  - name: sample-api-slo-recording
+    interval: 30s
+    rules:
+      - record: sample_api:slo_errors:ratio_rate5m
+        expr: |
+          1 - (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics", le="0.3", http_response_status_code!~"5.."}[5m]))
+          /
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[5m]))
+          )
+      - record: sample_api:slo_errors:ratio_rate30m
+        expr: |
+          1 - (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics", le="0.3", http_response_status_code!~"5.."}[30m]))
+          /
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[30m]))
+          )
+      - record: sample_api:slo_errors:ratio_rate1h
+        expr: |
+          1 - (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics", le="0.3", http_response_status_code!~"5.."}[1h]))
+          /
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[1h]))
+          )
+      - record: sample_api:slo_errors:ratio_rate2h
+        expr: |
+          1 - (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics", le="0.3", http_response_status_code!~"5.."}[2h]))
+          /
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[2h]))
+          )
+      - record: sample_api:slo_errors:ratio_rate6h
+        expr: |
+          1 - (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics", le="0.3", http_response_status_code!~"5.."}[6h]))
+          /
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[6h]))
+          )
+      - record: sample_api:slo_errors:ratio_rate1d
+        expr: |
+          1 - (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics", le="0.3", http_response_status_code!~"5.."}[1d]))
+          /
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[1d]))
+          )
+      - record: sample_api:slo_errors:ratio_rate3d
+        expr: |
+          1 - (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics", le="0.3", http_response_status_code!~"5.."}[3d]))
+          /
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[3d]))
+          )
+      - record: sample_api:requests:rate5m
+        expr: sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics"}[5m]))
+
+  - name: sample-api-slo-alerts
+    # Pull request previews have no SLO: they run test traffic, often a broken build on purpose, and are gone in
+    # hours. The local environment (pull request 0) and environments outside the preview system keep theirs.
+    rules:
+      # 14.4x burns 2 % of the 30-day budget in one hour: someone must look now.
+      - alert: SampleApiErrorBudgetBurnFast
+        expr: |
+          sample_api:slo_errors:ratio_rate1h{preview_pull_request!~"[1-9][0-9]*"} > (14.4 * 0.005)
+          and
+          sample_api:slo_errors:ratio_rate5m{preview_pull_request!~"[1-9][0-9]*"} > (14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: page
+          slo: sample-api-availability-latency
+        annotations:
+          summary: "sample-api in {{ $labels.k8s_namespace_name }} is burning its error budget 14x too fast"
+          description: "{{ $value | humanizePercentage }} of requests failed or took more than 300 ms over the last hour (budget 0.5 %)."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+
+      # 6x burns 5 % of the budget in six hours.
+      - alert: SampleApiErrorBudgetBurnMedium
+        expr: |
+          sample_api:slo_errors:ratio_rate6h{preview_pull_request!~"[1-9][0-9]*"} > (6 * 0.005)
+          and
+          sample_api:slo_errors:ratio_rate30m{preview_pull_request!~"[1-9][0-9]*"} > (6 * 0.005)
+        for: 15m
+        labels:
+          severity: page
+          slo: sample-api-availability-latency
+        annotations:
+          summary: "sample-api in {{ $labels.k8s_namespace_name }} is burning its error budget 6x too fast"
+          description: "{{ $value | humanizePercentage }} of requests failed or took more than 300 ms over the last 6 hours (budget 0.5 %)."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+
+      # 3x and 1x will exhaust the budget before the end of the window: worth a ticket, not a page.
+      - alert: SampleApiErrorBudgetBurnSlow
+        expr: |
+          (
+            sample_api:slo_errors:ratio_rate1d{preview_pull_request!~"[1-9][0-9]*"} > (3 * 0.005)
+            and
+            sample_api:slo_errors:ratio_rate2h{preview_pull_request!~"[1-9][0-9]*"} > (3 * 0.005)
+          )
+          or
+          (
+            sample_api:slo_errors:ratio_rate3d{preview_pull_request!~"[1-9][0-9]*"} > 0.005
+            and
+            sample_api:slo_errors:ratio_rate6h{preview_pull_request!~"[1-9][0-9]*"} > 0.005
+          )
+        for: 1h
+        labels:
+          severity: ticket
+          slo: sample-api-availability-latency
+        annotations:
+          summary: "sample-api in {{ $labels.k8s_namespace_name }} will run out of error budget at this pace"
+          description: "{{ $value | humanizePercentage }} of requests failed or took more than 300 ms (budget 0.5 %)."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+
+  - name: sample-api-symptoms
+    rules:
+      # Symptom alerts, quicker to read than a burn rate, for every environment including previews. They open a
+      # ticket; paging is left to the burn rates. Ignored below 0.1 request/s, so a single failing request on an
+      # idle preview stays quiet.
+      - alert: SampleApiHighErrorRate
+        expr: |
+          (
+            sum by (k8s_namespace_name, preview_pull_request) (rate(http_server_request_duration_seconds_count{job="sample-api", http_route!~"/health/.*|/metrics", http_response_status_code=~"5.."}[5m]))
+          /
+            sample_api:requests:rate5m
+          ) > 0.05
+          and
+          sample_api:requests:rate5m > 0.1
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "More than 5 % of sample-api requests fail in {{ $labels.k8s_namespace_name }}"
+          description: "{{ $value | humanizePercentage }} of requests answered 5xx over the last 5 minutes."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md
+
+      - alert: SampleApiHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (k8s_namespace_name, preview_pull_request, le) (rate(http_server_request_duration_seconds_bucket{job="sample-api", http_route!~"/health/.*|/metrics"}[5m]))
+          ) > 0.3
+          and
+          sample_api:requests:rate5m > 0.1
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "sample-api p95 latency above 300 ms in {{ $labels.k8s_namespace_name }}"
+          description: "p95 is {{ $value | humanizeDuration }} over the last 5 minutes."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/slo-burn.md

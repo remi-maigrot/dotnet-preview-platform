@@ -1,0 +1,68 @@
+# Health of the preview operator and of the environments it manages.
+# Tested with promtool: rules/tests/preview-operator.test.yaml.
+groups:
+  - name: preview-operator
+    rules:
+      - alert: PreviewOperatorDown
+        expr: absent(up{job="preview-operator"} == 1)
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: No preview operator replica is reachable
+          description: "Nothing creates, updates or deletes previews; expired ones are not cleaned up."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+      - alert: PreviewOperatorNoLeader
+        expr: sum(preview_operator_leader{job="preview-operator"}) < 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: The preview operator replicas are up but none holds the leader lease
+          description: "Replicas run but nobody reconciles. Check the Lease preview-operator in preview-system."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+      - alert: PreviewReconciliationFailing
+        expr: |
+          sum(rate(preview_operator_reconciliations_total{job="preview-operator", result="error"}[10m]))
+          /
+          sum(rate(preview_operator_reconciliations_total{job="preview-operator"}[10m]))
+          > 0.25
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of preview reconciliations fail"
+          description: "Errors are retried with backoff; a lasting ratio means a preview cannot converge. See the operator logs and the PreviewEnvironment events."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+      - alert: PreviewEnvironmentStuck
+        expr: sum by (phase) (max without (instance, pod) (preview_environments{job="preview-operator", phase=~"Pending|Provisioning"})) > 0
+        for: 20m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value }} preview(s) stuck in {{ $labels.phase }} for 20 minutes"
+          description: "A preview is normally Ready in under a minute. kubectl get previewenvironments shows which one, its status message says why."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+      - alert: PreviewEnvironmentFailed
+        expr: sum(max without (instance, pod) (preview_environments{job="preview-operator", phase="Failed"})) > 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value }} preview(s) in phase Failed"
+          description: "Usually an invalid spec or a deployment job that ran out of retries. kubectl describe previewenvironment shows the condition."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md
+
+      - alert: PreviewOperatorQueueBacklog
+        expr: max(preview_operator_workqueue_depth{job="preview-operator"}) > 20
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "{{ $value }} previews waiting to be reconciled"
+          description: "The operator does not keep up. Check the reconciliation duration and the number of workers (Operator__Workers)."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/preview-stuck.md

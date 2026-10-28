@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>devctl</AssemblyName>
+    <RootNamespace>Devctl.Cli</RootNamespace>
+
+    <!-- Packed as a dotnet tool by the Cake Package target; see the README for installation. -->
+    <IsPackable>true</IsPackable>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>devctl</ToolCommandName>
+    <PackageId>Devctl</PackageId>
+    <Description>Developer CLI of the preview platform: local cluster, preview environments, diagnostics.</Description>
+    <PackageTags>kubernetes;k3d;preview-environments;developer-experience</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">0.0.0-local</InformationalVersion>
+    <!-- CA1716: "Operator" from the referenced CRD namespace. -->
+    <NoWarn>$(NoWarn);CA1716</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Preview.Operator.Crds\Preview.Operator.Crds.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CliWrap" />
+    <PackageReference Include="KubernetesClient" />
+    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="Spectre.Console.Json" />
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="/" />
+    <InternalsVisibleTo Include="Devctl.Cli.Tests" />
+  </ItemGroup>
+</Project>

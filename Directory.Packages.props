@@ -44,6 +44,13 @@
     <PackageVersion Include="KubernetesClient" Version="21.0.8" />
   </ItemGroup>
 
+  <ItemGroup Label="CLI">
+    <PackageVersion Include="System.CommandLine" Version="2.0.14" />
+    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
+    <PackageVersion Include="Spectre.Console.Json" Version="0.57.2" />
+    <PackageVersion Include="CliWrap" Version="3.10.5" />
+  </ItemGroup>
+
   <ItemGroup Label="Build">
     <PackageVersion Include="Cake.Frosting" Version="6.3.0" />
     <!-- Transitive pin: Cake.Frosting resolves 10.0.12, affected by GHSA-846f-f764-76mx. -->
@@ -62,5 +69,6 @@
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
     <PackageVersion Include="WireMock.Net" Version="2.20.0" />
+    <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
   </ItemGroup>
 </Project>

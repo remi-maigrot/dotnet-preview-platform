@@ -132,6 +132,18 @@ public sealed class PreviewManifestsTests
     }
 
     [Fact]
+    public void PullPolicy_AppliesToPlatformImagesOnly()
+    {
+        // CI loads the platform's images into kind and sets Never; PostgreSQL is not loaded and must still be pulled.
+        _options.ImagePullPolicy = "Never";
+        var manifests = Manifests(Previews.ForPullRequest(7, seed: true), seeder: true);
+
+        manifests.DatabaseStatefulSet().Spec.Template.Spec.Containers.ShouldAllBe(c => c.ImagePullPolicy == "IfNotPresent");
+        manifests.DeployJob().Spec.Template.Spec.Containers.ShouldAllBe(c => c.ImagePullPolicy == "Never");
+        manifests.SeedJob().Spec.Template.Spec.Containers.ShouldAllBe(c => c.ImagePullPolicy == "Never");
+    }
+
+    [Fact]
     public void SeedJob_WithoutSeederImage_Throws() =>
         Should.Throw<InvalidOperationException>(() => Manifests(Previews.ForPullRequest(7)).SeedJob());
 

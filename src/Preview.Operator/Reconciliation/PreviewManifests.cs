@@ -278,7 +278,8 @@ internal sealed class PreviewManifests
                         {
                             Name = "postgres",
                             Image = _options.PostgresImage,
-                            ImagePullPolicy = _options.ImagePullPolicy,
+                            // A public image pinned by digest: never loaded by hand, so ImagePullPolicy does not apply.
+                            ImagePullPolicy = "IfNotPresent",
                             Ports = [new V1ContainerPort { Name = "postgres", ContainerPort = 5432 }],
                             Env =
                             [

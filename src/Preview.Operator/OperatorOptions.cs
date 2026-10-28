@@ -33,6 +33,7 @@ internal sealed class OperatorOptions
     public string PostgresImage { get; set; } =
         "postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b";
 
+    /// <summary>Pull policy of the platform's own images (deployer, API, migrator, seeder), not of PostgreSQL.</summary>
     [RegularExpression("^(Always|IfNotPresent|Never)$")]
     public string ImagePullPolicy { get; set; } = "IfNotPresent";
 

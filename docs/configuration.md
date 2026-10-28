@@ -87,6 +87,7 @@ image references and the public port for the local cluster.
 | `Operator__MaxTtl` | `72h` | Longer TTLs are capped |
 | `Operator__DeployerImage`, `Operator__SeederImage` | GHCR images | Helm-with-chart image and data seeder |
 | `Operator__PostgresImage` | `postgres:17-alpine` by digest | |
+| `Operator__ImagePullPolicy` | `IfNotPresent` | For the platform's images only. CI sets `Never` because it loads them into kind; PostgreSQL is always pulled when missing |
 | `Operator__QuotaCpu`, `Operator__QuotaMemory` | `2`, `3Gi` | ResourceQuota of each preview |
 | `Operator__CollectorEndpoint`, `Operator__CollectorNamespace` | collector in `observability` | Empty endpoint: no export |
 | `Operator__Workers` | `2` | Previews reconciled in parallel |

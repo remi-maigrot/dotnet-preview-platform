@@ -22,8 +22,8 @@ dotnet run --project src/Devctl.Cli -- preview create --pr 42
 ```
 
 The first command creates a local k3d cluster with its registry, builds the images from your working copy,
-and installs Traefik, the observability stack, the operator and the API. On a laptop it takes about two
-minutes, a bit more the first time because base images are pulled:
+and installs Traefik, the observability stack, the operator and the API. On a laptop it takes about three
+minutes from nothing, two when the cluster already exists:
 
 ```text
 ✓ Image tag (afb0e6976d14-dirty-1793192054, 0s)
@@ -44,7 +44,7 @@ minutes, a bit more the first time because base images are pulled:
 ```
 
 The second one asks the operator for the environment of pull request 42, exactly as CI does, and waits
-until it answers on `http://pr-42.preview.localtest.me:8080` (about 20 seconds). `devctl doctor` checks
+until it answers on `http://pr-42.preview.localtest.me:8080` (20 to 30 seconds). `devctl doctor` checks
 the prerequisites, `devctl down` deletes everything. To get `devctl` on your `PATH`, see
 [src/Devctl.Cli](src/Devctl.Cli/README.md).
 

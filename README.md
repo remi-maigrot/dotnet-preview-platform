@@ -3,32 +3,22 @@
 [![CI](https://github.com/remi-maigrot/dotnet-preview-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/remi-maigrot/dotnet-preview-platform/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/remi-maigrot/dotnet-preview-platform/badges/coverage.json)](build/README.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
-![Kubernetes](https://img.shields.io/badge/Kubernetes-operator-326CE5?logo=kubernetes&logoColor=white)
-![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces%20%7C%20metrics%20%7C%20logs-425CC7?logo=opentelemetry&logoColor=white)
-![Helm](https://img.shields.io/badge/Helm-charts-0F1689?logo=helm&logoColor=white)
 
-A small internal developer platform for .NET 10 services on Kubernetes. Every pull request gets its own
-isolated environment, created by an operator written in C#, seeded with data, tested, and deleted when its
-TTL expires. Releases go through seven gates, then a canary that rolls itself back when it misses the SLO.
+For each pull request, CI starts a Kubernetes cluster and an operator written in C# creates a namespace for it,
+with the API, a PostgreSQL instance and test data. Smoke and load tests run against that environment and the
+results are posted on the pull request. On a laptop the same operator gives each preview its own URL and deletes
+it when its time to live runs out.
 
-The service it runs is a deliberately ordinary one: an absence request API (employees ask for leave,
-managers decide), there so the platform has a real application to build, migrate, test and release.
+The repository also has a CLI that sets all of this up locally, a release workflow with seven checks (not run
+yet, see the limits below), and the dashboards and alert rules that go with the API.
 
-![Sample API dashboard in Grafana, on the local environment under load](docs/assets/grafana-sample-api.png)
+The application is deliberately unexciting. It's an API for absence requests: an employee asks for leave, their
+manager approves or rejects it. It's small, but it has real business rules, a schema that needs migrations, and
+personal data.
 
-| | |
-|---|---|
-| Local platform from nothing | `devctl up`, about 3 minutes |
-| A preview environment | Ready in 20 to 30 seconds, deleted after its TTL |
-| Release gates | 7, from tests to load tests on a real preview |
-| Tests | 293: unit, integration on real PostgreSQL, architecture, operator, CLI |
-| Line coverage | 100 % domain, 98.6 % application (the build fails under 80 %) |
-| Build warnings | 0, warnings are errors |
+## Running it locally
 
-## Try it
-
-You need Docker, the .NET 10 SDK, `k3d`, `kubectl` and `helm`.
+You need Docker, the .NET 10 SDK, k3d, kubectl and helm. `devctl doctor` tells you what's missing.
 
 ```sh
 git clone https://github.com/remi-maigrot/dotnet-preview-platform && cd dotnet-preview-platform
@@ -36,9 +26,9 @@ dotnet run --project src/Devctl.Cli -- up
 dotnet run --project src/Devctl.Cli -- preview create --pr 42
 ```
 
-The first command creates a local k3d cluster with its registry, builds the images from your working copy,
-and installs Traefik, the observability stack, the operator and the API. On a laptop it takes about three
-minutes from nothing, two when the cluster already exists:
+`up` creates a k3d cluster and a local registry, builds the images from your working copy, and installs Traefik,
+the monitoring stack, the operator and the API. It takes about three minutes from scratch. This is a second run,
+on a cluster that already existed:
 
 ```text
 ✓ Image tag (afb0e6976d14-dirty-1793192054, 0s)
@@ -58,239 +48,166 @@ minutes from nothing, two when the cluster already exists:
 ╰──────────┴────────────────────────────────────────────────────────────╯
 ```
 
-The second one asks the operator for the environment of pull request 42, exactly as CI does, and waits
-until it answers on `http://pr-42.preview.localtest.me:8080` (20 to 30 seconds). `devctl doctor` checks
-the prerequisites, `devctl down` deletes everything. To get `devctl` on your `PATH`, see
-[src/Devctl.Cli](src/Devctl.Cli/README.md).
+`preview create --pr 42` then does what CI does for a pull request. After 20 or 30 seconds,
+`http://pr-42.preview.localtest.me:8080` answers. `devctl down` removes everything. If you'd rather have `devctl`
+on your `PATH`, the install steps are in [src/Devctl.Cli](src/Devctl.Cli/README.md).
 
-## How it fits together
+Grafana opens on the API dashboard:
+
+![Grafana dashboard of the sample API on the local cluster, under load](docs/assets/grafana-sample-api.png)
+
+## What happens to a pull request
 
 ```mermaid
 flowchart LR
-  dev([Developer]) -- devctl --> cluster
-  dev -- pull request --> gha[GitHub Actions]
-  gha -->|"dotnet run --project build"| cake[Cake Frosting]
-  gha -- PreviewEnvironment pr-N --> op
-
-  subgraph cluster [Kubernetes]
-    op[preview-operator] -- namespace, quota, policies,<br/>secrets, database, deploy, seed --> pr[namespace pr-N]
-    pr -- OTLP --> obs[Collector → Prometheus, Tempo, Loki → Grafana]
-  end
-
-  gha -- tag vX.Y.Z: 7 gates --> ghcr[(GHCR<br/>signed images, chart)]
-  ghcr -- canary 10 → 30 → 60 %<br/>judged on the SLO --> prod[production]
+  pr([pull request]) --> ci[ci.yml<br/>build, tests, scans]
+  pr --> pv[preview.yml]
+  pv --> kind[kind cluster<br/>with the operator]
+  kind --> env[namespace pr-N<br/>API, PostgreSQL, test data]
+  env --> checks[smoke tests, k6]
+  checks --> comment([comment on the pull request])
+  tag([tag vX.Y.Z]) --> rel[release.yml<br/>7 checks]
+  rel --> ghcr[(GHCR)]
+  ghcr --> canary[optional Argo Rollouts canary,<br/>aborted if it misses the SLO]
 ```
 
-A pull request triggers two workflows. `ci.yml` checks the code: format, build, tests, coverage, Helm lint,
-scan, SBOM. `preview.yml` builds the images, applies a `PreviewEnvironment`, runs the smoke and k6 tests
-against it, and posts the results as a single comment on the pull request. Both only call the Cake build,
-so whatever fails in CI fails the same way on your machine. The longer walkthrough, with a sequence diagram
-from pull request to production, is in [docs/architecture.md](docs/architecture.md).
+`ci.yml` checks the code. `preview.yml` builds the images, starts a kind cluster inside the job, installs the
+operator, applies a `PreviewEnvironment` and waits for it to be ready. Then it runs the tests against it and
+updates a single comment on the pull request:
 
-This is the comment a pull request gets, here on a dependency update opened by Dependabot:
+<img src="docs/assets/preview-comment.png" alt="Pull request comment with the smoke and load test results of the preview" width="560">
 
-<img src="docs/assets/preview-comment.png" alt="Pull request comment with the smoke test and load test results of the preview" width="560">
+Both workflows install their tools and call the Cake build in `build/`, the same targets you run locally (`dotnet
+run --project build -- --target CI`), so most failures reproduce on a laptop.
+[docs/architecture.md](docs/architecture.md) goes through the whole path, from pull request to release.
 
-### The life of a preview
+## What's in it
 
-```mermaid
-stateDiagram-v2
-  direction LR
-  [*] --> Pending: PreviewEnvironment pr-N applied
-  Pending --> Provisioning
-  Provisioning --> Ready: namespace, policies, database,<br/>migrations, API, seed data
-  Provisioning --> Failed: deploy or seed Job failed
-  Ready --> Provisioning: new image pushed
-  Failed --> Provisioning: new image pushed
-  Ready --> Expired: TTL reached
-  Failed --> Expired: TTL reached
-  Expired --> [*]: finalizer deletes the namespace
-```
+The operator (`src/Preview.Operator`) turns a `PreviewEnvironment` into a namespace with Pod Security set to
+`restricted`, a quota, network policies that deny everything by default, generated credentials, a PostgreSQL
+instance, a Helm release of the API and its test data. When the TTL runs out, or when someone deletes the
+resource, a finalizer deletes the namespace. It runs as two replicas with leader election. The reconciler is
+tested against a fake cluster, so most of its tests run in milliseconds. [ADR
+0001](docs/adr/0001-csharp-operator-instead-of-helm-alone.md) explains why this isn't just a Helm chart.
 
-Closing the pull request deletes the resource at any point, and the same finalizer cleans up.
-
-### The road to a release
-
-```mermaid
-flowchart TB
-  subgraph check [Is the code right?]
-    direction LR
-    tag([tag v1.4.0]) --> g1[1 Tests<br/>coverage ≥ 80 %] --> g2[2 Architecture<br/>rules] --> g3[3 Migrations<br/>on previous data]
-  end
-  subgraph ship [Is the artifact safe to run?]
-    direction LR
-    g4[4 No critical CVE<br/>amd64 + arm64] --> g5[5 SBOM] --> g6[6 cosign signature<br/>+ provenance] --> g7[7 Smoke + k6<br/>on a real preview]
-  end
-  subgraph prod [Production]
-    direction LR
-    pub([version tag on the<br/>tested digests]) --> canary[canary 10 → 30 → 60 %<br/>aborted if it misses the SLO]
-  end
-  check --> ship --> prod
-```
-
-## What this project demonstrates
-
-**A developer CLI.** `devctl` (System.CommandLine, Spectre.Console) wraps k3d, Helm and the Kubernetes API:
-`up`, `down`, `status`, `logs`, `preview create|list|delete|diagnose`. Every command has `--output json` and
-documented exit codes, so scripts can rely on it. `preview diagnose` explains a broken preview: failing pods,
-events, missing images, recent failed requests from Tempo. It can also pass the report to any
-OpenAI-compatible endpoint you configure. Nothing is sent unless you set one, and secrets and emails are
-redacted first. Here it is on a preview deployed with an image tag that doesn't exist:
+`devctl` (`src/Devctl.Cli`) handles `up`, `down`, `status`, `logs` and the `preview` commands. Every command can
+print JSON and has documented exit codes. `preview diagnose` collects what you would otherwise dig out of
+`kubectl describe` and the pod logs. Here it is on a preview I broke on purpose by giving it an image tag that
+doesn't exist:
 
 ```text
 $ devctl preview diagnose --pr 13
-# Preview pr-13
-
-- Phase: Provisioning
-- Image: preview-registry.localhost:5050/sample-api:does-not-exist
-
+...
 ## Findings
 
 - **Error: The image of sample-api-migrate-5ht6n/migrate cannot be pulled.** Back-off pulling image
   "preview-registry.localhost:5050/sample-migrator:does-not-exist": ErrImagePull: ... not found
   Check that this tag exists in the registry and that the cluster can reach it (devctl up pushes local builds).
-
-## Conditions
-
-- NamespaceReady=True Applied Namespace pr-13 and its policies are in place.
-- DatabaseReady=True Running PostgreSQL accepts connections.
-- ApplicationDeployed=False InProgress Deploying preview-registry.localhost:5050/sample-api:does-not-exist (job deploy-0dc8f9970d).
-- Ready=False Provisioning The environment is being provisioned.
-
-## Pods
-
-- sample-api-migrate-5ht6n: Pending
-  - migrate: ImagePullBackOff, 0 restart(s)
 ...
 ```
 
-The API image was not the one that failed. The migrator runs first, and its missing image is what blocks the
-preview.
+The API never got as far as pulling its image. The migration job runs first, and that's the one stuck. The
+command can also hand the report to an LLM endpoint you configure. Nothing is sent unless you configure one.
+Passwords, tokens and email addresses are masked by pattern matching first, which is best effort, so
+`--show-payload` prints exactly what would be sent.
 
-**A Kubernetes operator in C#.** A cluster-scoped `PreviewEnvironment` resource becomes a namespace with Pod
-Security `restricted`, a quota, deny-by-default network policies, generated credentials, a PostgreSQL
-instance, a Helm deployment and seed data. It expires after its TTL, and a finalizer cleans up. Work queue
-with per-key backoff, leader election across two replicas, idempotent steps. The reconciler is tested
-without a cluster. [ADR 0001](docs/adr/0001-csharp-operator-instead-of-helm-alone.md) explains why this
-isn't just a Helm chart.
+The build (`build/`) is a [Cake Frosting](build/README.md) project: format check, build, tests with a coverage
+threshold, Helm lint, image builds, Trivy, SBOMs, the backup round-trip test and packaging.
 
-**Pipelines in C#.** Every CI step is a [Cake Frosting](build/README.md) task. GitHub Actions installs tools,
-calls `dotnet run --project build -- --target CI`, and does nothing else that could drift. Actions are
-pinned by SHA and checked by actionlint and zizmor.
+Releases start from a tag. `release.yml` runs seven checks in order. The tests run again on the tagged commit,
+then the architecture rules, then the migrations, applied on top of the previous release's schema and data. The
+images are scanned for critical CVEs on both architectures, get SBOMs, and are signed with cosign along with
+their provenance. The final check is a smoke and load test on a real preview. Only then does the version tag go
+on the image digests that were tested. The chart also has an optional canary rollout with Argo Rollouts, which
+checks the error rate and latency against the SLO every 30 seconds.
+[docs/release-qualification.md](docs/release-qualification.md) has the details.
 
-**Release qualification.** A tag only proposes a release. [release.yml](docs/release-qualification.md)
-runs seven gates in order: tests and coverage, architecture rules, migrations on top of the previous
-release's data, critical CVEs on both architectures, SBOMs, cosign signatures with provenance, then smoke and
-load tests on a real preview. The version tag goes on the tested digests at the very end. In production the
-chart can roll out with Argo Rollouts, analysed against the SLO every 30 seconds. The `Canary` workflow
-proves both outcomes: a release that fails half of its requests is aborted, and a healthy one is promoted.
+I wanted proof that the rollback actually works, so the `Canary` workflow deploys a release that fails half of
+its requests and checks that it gets aborted, then a healthy one that has to be promoted. This is what that run
+looks like in Grafana:
 
-**Configuration that fails early.** Typed options validated at startup (data annotations, cross-field rules,
-environment-specific rules such as "fault injection is refused in Production"), secrets read from mounted
-files, and a JSON schema on the Helm values. A wrong setting stops the pod with a readable message instead
-of failing on the first request. [docs/configuration.md](docs/configuration.md) lists every setting.
+![Grafana during the canary test: release markers, the error spike of the faulty canary, then back to zero](docs/assets/grafana-canary-abort.png)
 
-**Observability as code.** OpenTelemetry everywhere, without vendor exporters. The collector, Prometheus,
-Tempo, Loki and Grafana are one versioned chart. Dashboards and alert rules live in the repository, and
-alert rules have unit tests run by `promtool` in CI. Alerts on the SLO follow the multi-window burn-rate
-method, exemplars link a latency spike to its trace, and each release leaves a marker on the dashboards.
+The purple lines are the releases. Errors spike when the bad canary takes traffic and drop back to zero once the
+analysis aborts it.
 
-![Sample API dashboard during the canary test: release markers, the faulty canary's error spike, back to zero after the abort](docs/assets/grafana-canary-abort.png)
+Configuration is typed and validated when the app starts. A missing connection string, a JWT key that's too short
+or fault injection switched on in Production stops the pod with a message that names the setting, instead of
+failing on the first request. Secrets are read from mounted files, not environment variables. The Helm values
+have a JSON schema too. Every setting is listed in [docs/configuration.md](docs/configuration.md).
 
-*The canary test seen from Grafana. The purple lines are releases. The second release fails half of its
-requests: the analysis aborts it, traffic goes back to the stable version and errors drop to zero. The third
-release is healthy and promoted.*
+Monitoring is plain OpenTelemetry, sent to Prometheus, Tempo and Loki through a collector, with Grafana on top.
+All of it is a single chart in `deploy/observability`. The dashboards and alert rules are files in the
+repository, and the alert rules have unit tests that `promtool` runs in CI. The SLO alerts use multi-window burn
+rates, and the latency panels carry exemplars, so you can jump from a slow bucket to a sample trace.
 
-### Across all six
+The data in the API is personal, so previews only get synthetic data, or a pseudonymised copy of a real database.
+Free-text comments are erased 180 days after the request is decided. Backups are encrypted with age, and a job
+restores one every day and checks it. [docs/data-protection.md](docs/data-protection.md) covers that. On the
+security side, images are chiseled and run as non-root, and pods only get a service account token when they call
+the API server. Cluster-wide, the operator can manage PreviewEnvironments and namespaces and bind two named
+ClusterRoles; everything else is granted by a RoleBinding inside each preview namespace. Images are signed
+keyless through GitHub's OIDC token, so there is no signing key to store. That's in
+[docs/security.md](docs/security.md).
 
-- **Personal data.** Previews hold synthetic or pseudonymised data, never real data. Free text expires after
-  180 days and requests after 5 years. Backups are encrypted with age and restored every day by a job that
-  checks row counts and integrity. Telemetry carries no personal fields.
-  [docs/data-protection.md](docs/data-protection.md)
-- **Security.** Chiseled non-root images with a read-only filesystem, no service account token where none is
-  needed, scoped RBAC, a database role per purpose, keyless signing, no long-lived CI credentials.
-  [docs/security.md](docs/security.md)
+## Trade-offs
 
-## Repository layout
+An operator is more code than a chart, about 700 lines of C# plus RBAC that someone has to review. I went with it
+because Helm alone can't expire an environment, clean up after a failed install, keep credentials stable across
+upgrades or report a status that CI can wait on.
 
-```text
-src/
-  Sample.Domain/            absence requests and their rules, no dependencies
-  Sample.Application/       use cases
-  Sample.Infrastructure/    EF Core, PostgreSQL, data retention
-  Sample.Api/               Minimal API: auth, rate limiting, problem details, OpenTelemetry
-  Sample.Api.Contracts/     request and response types shared with the tests
-  Sample.Migrator/          applies migrations from a Helm pre-upgrade Job
-  Preview.DataSeeder/       synthetic data, or a pseudonymised copy of a database
-  Preview.Operator/         the operator
-  Preview.Operator.Crds/    PreviewEnvironment types, shared by the operator and devctl
-  Devctl.Cli/               devctl
-tests/                      unit, integration (Testcontainers), architecture, operator, CLI, smoke
-build/                      Cake Frosting: every CI and release step
-deploy/
-  crds/  operator/          the CRD and the operator's manifests
-  helm/sample-api/          the API chart: probes, HPA, PDB, policies, canary, backups
-  observability/            collector, Prometheus, Tempo, Loki, Grafana, dashboards, rules and their tests
-  backup/                   backup image and its end-to-end test
-  canary/  ci/              canary end-to-end test, kind and Traefik settings for CI
-load/                       k6 scripts
-.github/workflows/          ci, preview, release, canary, cleanup, codeql
-docs/                       architecture, ADRs, runbooks, one page per concern
-```
+One namespace per preview means one PostgreSQL per preview. That's fine for a handful of pull requests. With a
+few dozen open at once I'd move to a shared server with a database per preview.
 
-## Technical choices and trade-offs
+Migrations run in a Helm pre-upgrade Job and never when the app starts, so replicas don't race each other and the
+API's database role can't change the schema. The cost is that every migration has to work with the previous
+version of the app still running, which means splitting some changes over two releases.
 
-Each of these has an ADR in [docs/adr](docs/adr) with the alternatives that were turned down.
+Self-hosting Prometheus, Tempo and Loki costs about 2.5 GB of memory on a laptop. Because the code only speaks
+OTLP, moving to a hosted backend later wouldn't touch the application, only the collector's exporters and the
+Grafana datasources.
 
-- **An operator, not only a chart.** Helm describes one release well. It doesn't handle expiry, cleanup
-  after a failure, credentials created once and kept, or a status CI can wait on. The cost is about 700
-  lines of C# to maintain, and an RBAC footprint that has to be reviewed.
-- **A namespace per preview.** Isolation comes from Kubernetes itself (quota, policies, Pod Security), and
-  deleting a preview means deleting a namespace. It costs a PostgreSQL per preview, which is fine at this
-  size and would call for a shared server with a database per preview past a few dozen.
-- **Migrations in a Job, never at startup.** Several replicas starting at once don't race each other, the API
-  runs with a role that can't change the schema, and a failed migration stops the release before any pod
-  rolls.
-- **Pipelines in C# rather than YAML.** The pipeline is compiled, debuggable and reproducible locally. In
-  exchange, a contributor has to read C# to change CI, and the first build takes a few seconds longer.
-- **OpenTelemetry only.** Switching to a hosted backend means changing the collector's exporters, not the
-  code. Self-hosting Prometheus, Tempo and Loki costs memory on a laptop: about 2.5 GB for the stack.
-- **Argo Rollouts for canaries.** Its analysis queries Prometheus directly and aborts on its own. It is one
-  more controller in the cluster, and the chart keeps a plain Deployment when it's disabled.
+The reasoning behind each of these, and the options I turned down, is in the [ADRs](docs/adr).
 
 ## Known limits
 
-- **CI clusters are ephemeral.** The preview and release workflows create a kind cluster inside the job, and
-  the preview lives as long as the job. That proves the operator, the chart and the images, but not a real
-  network, storage class or node size. On a real platform the same operator runs on a shared cluster,
-  previews live for their TTL, and pull requests only apply and delete the resource.
-- **No release has been cut yet.** CI, previews, CodeQL and the canary test run on GitHub. The release
-  workflow, and with it keyless signing and publishing to GHCR, will run for the first time with the first
-  tag.
-- **No admission control on signatures.** Images are signed, but the cluster doesn't yet refuse unsigned
-  ones. A policy controller is the next step.
-- **Backups stay in the cluster.** They go to a persistent volume. A real setup writes them to object storage
-  in another account, with object lock. Restores lose up to a day, since `pg_dump` is a daily logical backup.
-- **The load test is small.** 10 virtual users for a minute catch an N+1 query or a missing index, not a
-  capacity problem.
-- **No mutual TLS inside the cluster.** Traffic is restricted by network policies, not encrypted.
+- The clusters in CI are throwaway kind clusters created inside the job, so a preview only lives as long as its
+  job. That's enough to test the operator, the chart and the images for real. It says nothing about a real
+  network, storage class or node sizes. On a real platform the same operator would run on a shared cluster,
+  previews would live out their TTL, and pull requests would only create and delete the resource.
+- No release has been tagged yet. CI, previews, CodeQL and the canary test all run on GitHub, but the release
+  workflow, and with it signing and publishing to GHCR, will only run for the first time on the first tag.
+- The cluster doesn't refuse unsigned images. A policy controller would be the next step.
+- Backups go to a volume in the same cluster. For real data they belong in object storage in another account,
+  with object lock. Since they are daily `pg_dump`s, a restore can lose up to a day.
+- The load test is small (10 virtual users for a minute). It catches an N+1 query, not a capacity problem.
+- Traffic inside the cluster is restricted by network policies but not encrypted.
 
-More detail in the "Known limits" section of each page in [docs](docs).
+Each page in [docs](docs) ends with its own list of limits.
 
-## Documentation
+## Layout
 
-| | |
-|---|---|
-| [Architecture](docs/architecture.md) | Components, pull request to production, reconciliation model |
-| [API](docs/api.md) | Endpoints, states, idempotency, error codes |
-| [Configuration](docs/configuration.md) | Every setting, its default and its validation |
-| [Release qualification](docs/release-qualification.md) | The seven gates and the canary |
-| [Observability](docs/observability.md) | SLO, dashboards, alerts |
-| [Data protection](docs/data-protection.md) | Personal data, retention, backups |
-| [Security](docs/security.md) | Supply chain, cluster, application |
-| [Decisions](docs/adr) | Ten ADRs |
-| [Runbooks](docs/runbooks) | Preview stuck, operator crashlooping, release rejected, failed migration, SLO burn, restore |
-| [Contributing](CONTRIBUTING.md) | Build, test, conventions |
+```text
+src/
+  Sample.*                  the absence API: domain, application, infrastructure, API, migrator
+  Preview.Operator/         the operator
+  Preview.Operator.Crds/    PreviewEnvironment types, shared with devctl
+  Preview.DataSeeder/       synthetic data, or a pseudonymised copy of a database
+  Devctl.Cli/               devctl
+tests/                      unit, integration (Testcontainers), architecture, operator, CLI, smoke
+build/                      the Cake pipeline
+deploy/
+  helm/sample-api/          the API chart, with the canary and backup options
+  operator/  crds/          the operator's manifests and the CRD
+  observability/            the monitoring chart, dashboards, alert rules and their tests
+  backup/                   backup image and its end-to-end test
+  canary/  ci/              canary test, kind and Traefik settings for CI
+load/                       k6 scripts
+docs/                       architecture, ADRs, runbooks
+```
+
+There are also pages on the [API](docs/api.md), [observability](docs/observability.md), [runbooks](docs/runbooks)
+for when something breaks, and [CONTRIBUTING.md](CONTRIBUTING.md) for building and testing.
 
 ## License
 

@@ -22,7 +22,7 @@ env:
 
 jobs:
   lint-workflows:
-    name: Lint workflows
+    name: Lint workflows and scripts
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,6 +39,9 @@ jobs:
         with:
           advanced-security: false
           annotations: true
+
+      - name: Image cleanup script tests
+        run: python3 -m unittest discover --start-directory .github/scripts
 
   cross-platform:
     # devctl runs on developer laptops: the code must build and pass its unit tests on every OS.

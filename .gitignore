@@ -40,3 +40,4 @@ tools/
 
 # k6 report written by load/preview-smoke.js
 load/summary.md
+__pycache__/

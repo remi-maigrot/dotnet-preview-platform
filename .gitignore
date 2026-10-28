@@ -37,3 +37,6 @@ INTERVIEW_NOTES.md
 
 # Cake
 tools/
+
+# k6 report written by load/preview-smoke.js
+load/summary.md

@@ -451,6 +451,8 @@ internal sealed class PreviewManifests
             .AppendLine($"  resourceAttributes: \"preview.pull_request={_preview.Spec.PullRequest.ToString(CultureInfo.InvariantCulture)}\"")
             .AppendLine("config:")
             .AppendLine("  Features__AutoApproveSickLeave: \"true\"")
+            // Load tests run with two seeded accounts only; the production limit would throttle them.
+            .AppendLine("  RateLimiting__PermitLimit: \"2000\"")
             .AppendLine("release:")
             .AppendLine($"  sha: \"{_preview.Spec.CommitSha ?? _apiImage.Tag}\"");
         return builder.ToString();

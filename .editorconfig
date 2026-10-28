@@ -86,3 +86,7 @@ dotnet_diagnostic.CA1873.severity = none
 # Test projects use plain string literals for readability.
 dotnet_diagnostic.CA1861.severity = none
 dotnet_diagnostic.CA2000.severity = none
+
+[src/**/Migrations/*.cs]
+# Scaffolded by `dotnet ef migrations add`; reviewed in pull requests but not hand-formatted.
+generated_code = true

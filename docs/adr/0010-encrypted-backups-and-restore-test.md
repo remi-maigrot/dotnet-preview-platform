@@ -1,4 +1,4 @@
-# 9. Encrypted logical backups, proven by a daily restore test
+# 10. Encrypted logical backups, proven by a daily restore test
 
 - Status: accepted
 - Date: 2026-10-28

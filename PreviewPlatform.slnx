@@ -21,5 +21,6 @@
     <Project Path="tests/Preview.Operator.Tests/Preview.Operator.Tests.csproj" />
     <Project Path="tests/Sample.Api.IntegrationTests/Sample.Api.IntegrationTests.csproj" />
     <Project Path="tests/Sample.Api.UnitTests/Sample.Api.UnitTests.csproj" />
+    <Project Path="tests/Smoke.Tests/Smoke.Tests.csproj" />
   </Folder>
 </Solution>

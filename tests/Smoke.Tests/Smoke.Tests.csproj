@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Runs against a deployed environment, never in-process. Configured through environment variables:
+    SMOKE_BASE_URL (required) and SMOKE_SIGNING_KEY (required for the authenticated scenarios).
+    Not part of the Cake Test target; the preview and release workflows run it after deploying.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Sample.Api.Contracts\Sample.Api.Contracts.csproj" />
+    <!-- Aliased: only KnownAccounts is used, and the seeder's Program class must not leak into this assembly. -->
+    <ProjectReference Include="..\..\src\Preview.DataSeeder\Preview.DataSeeder.csproj" Aliases="seeder" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+  </ItemGroup>
+</Project>

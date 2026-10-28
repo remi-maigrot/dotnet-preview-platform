@@ -74,5 +74,7 @@
     <PackageVersion Include="NetArchTest.Rules" Version="1.3.2" />
     <PackageVersion Include="WireMock.Net" Version="2.20.0" />
     <PackageVersion Include="Spectre.Console.Testing" Version="0.57.2" />
+    <!-- Used by the smoke tests to mint tokens. With transitive pinning this version also applies to the API. -->
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
   </ItemGroup>
 </Project>

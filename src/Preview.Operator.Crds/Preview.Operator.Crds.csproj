@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- C# model of the PreviewEnvironment custom resource. The schema lives in deploy/crds; a test keeps both in sync. -->
+  <PropertyGroup>
+    <!-- CA1716 flags "Operator" (a Visual Basic keyword) in the namespace. These assemblies are not consumed from VB. -->
+    <NoWarn>$(NoWarn);CA1716</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KubernetesClient" />
+  </ItemGroup>
+</Project>

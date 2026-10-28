@@ -1,0 +1,132 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: previewenvironments.platform.remimaigrot.dev
+  labels:
+    app.kubernetes.io/part-of: preview-platform
+spec:
+  group: platform.remimaigrot.dev
+  scope: Cluster
+  names:
+    kind: PreviewEnvironment
+    listKind: PreviewEnvironmentList
+    plural: previewenvironments
+    singular: previewenvironment
+    shortNames: [preview, pe]
+    categories: [platform]
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: PR
+          type: integer
+          jsonPath: .spec.pullRequest
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: URL
+          type: string
+          jsonPath: .status.url
+        # "string", not "date": kubectl renders future dates of a "date" column as <invalid>.
+        - name: Expires
+          type: string
+          jsonPath: .status.expiresAt
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required: [pullRequest, image]
+              properties:
+                pullRequest:
+                  type: integer
+                  minimum: 1
+                  maximum: 999999
+                  description: Pull request number; drives the namespace and the host name.
+                  x-kubernetes-validations:
+                    - rule: self == oldSelf
+                      message: pullRequest is immutable; create another PreviewEnvironment instead.
+                image:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+                  description: API image reference, tagged with a commit SHA or pinned by digest.
+                  x-kubernetes-validations:
+                    - rule: "!self.endsWith(':latest')"
+                      message: "use an immutable tag (commit SHA) or a digest, not :latest."
+                ttl:
+                  type: string
+                  default: 4h
+                  pattern: '^([0-9]+h)?([0-9]+m)?$'
+                  description: Lifetime counted from creation (Go duration, e.g. 2h, 90m). The operator caps it.
+                resources:
+                  type: object
+                  properties:
+                    cpu:
+                      type: string
+                      default: 500m
+                    memory:
+                      type: string
+                      default: 256Mi
+                seedData:
+                  type: boolean
+                  default: false
+                  description: Load pseudonymised sample data after the migrations.
+                commitSha:
+                  type: string
+                  maxLength: 64
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Provisioning, Ready, Failed, Expired]
+                url:
+                  type: string
+                namespace:
+                  type: string
+                expiresAt:
+                  type: string
+                  format: date-time
+                observedGeneration:
+                  type: integer
+                  format: int64
+                message:
+                  type: string
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    type: object
+                    required: [type, status, lastTransitionTime, reason, message]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                        enum: ["True", "False", "Unknown"]
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      message:
+                        type: string

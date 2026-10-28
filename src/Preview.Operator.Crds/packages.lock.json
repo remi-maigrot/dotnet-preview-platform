@@ -1,0 +1,27 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "KubernetesClient": {
+        "type": "Direct",
+        "requested": "[21.0.8, )",
+        "resolved": "21.0.8",
+        "contentHash": "oAu5gvmEktdVH6yQ3lwumP/G+4x1S7OQahn97MAfJMa+KNM/tLOrmHJPEZ3sI6yh1o0XS+U/3jYtp+6dRafJQQ==",
+        "dependencies": {
+          "Fractions": "8.3.2",
+          "YamlDotNet": "18.0.0"
+        }
+      },
+      "Fractions": {
+        "type": "Transitive",
+        "resolved": "8.3.2",
+        "contentHash": "q0Xzg9nmBd1Y0fTn/EEG84dWqd02EogojtdBh/MUmtHhwIJBMJk3jo+4MRDCdLfi6lVDXD8UZBA0QkBH3FUh8A=="
+      },
+      "YamlDotNet": {
+        "type": "Transitive",
+        "resolved": "18.0.0",
+        "contentHash": "ptHVgcYmLejGuWXV7RMFoEqFKYMXnieOlWLPzEslfDtzZ9ngMhjYwykfqjBN2+fMEAEyobozkj07lKEpR4dssA=="
+      }
+    }
+  }
+}

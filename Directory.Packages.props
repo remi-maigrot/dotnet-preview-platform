@@ -1,0 +1,7 @@
+<Project>
+  <!-- Central package management: every version lives here, projects only reference names. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+</Project>

@@ -80,7 +80,10 @@ public sealed class BuildContext : FrostingContext
         new("preview-operator", "src/Preview.Operator/Dockerfile"),
         new("sample-deployer", "deploy/helm/Dockerfile"),
         new("sample-seeder", "src/Preview.DataSeeder/Dockerfile"),
+        new("sample-backup", "deploy/backup/Dockerfile"),
     ];
+
+    public ContainerImage Image(string name) => Images.Single(i => i.Name == name);
 
     public string ImageReference(ContainerImage image) => $"{ContainerRegistry}/{image.Name}:{ImageTag}";
 }

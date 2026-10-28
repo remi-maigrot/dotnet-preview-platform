@@ -58,6 +58,11 @@ app.kubernetes.io/component: api
 {{- include "sample-api.imageRef" $image }}
 {{- end }}
 
+{{- define "sample-api.backupImage" -}}
+{{- $image := dict "repository" .Values.backup.image.repository "tag" (default .Values.image.tag .Values.backup.image.tag) "digest" .Values.backup.image.digest -}}
+{{- include "sample-api.imageRef" $image }}
+{{- end }}
+
 {{/* Environment shared by the API and the migration job. */}}
 {{- define "sample-api.commonEnv" -}}
 - name: ASPNETCORE_ENVIRONMENT

@@ -18,7 +18,7 @@ concurrency:
 env:
   DOTNET_NOLOGO: "1"
   DOTNET_CLI_TELEMETRY_OPTOUT: "1"
-  IMAGES: sample-api sample-migrator preview-operator sample-deployer sample-seeder
+  IMAGES: sample-api sample-migrator preview-operator sample-deployer sample-seeder sample-backup
 
 jobs:
   tests:

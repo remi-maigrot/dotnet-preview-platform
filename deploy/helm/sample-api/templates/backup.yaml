@@ -1,0 +1,282 @@
+{{- if .Values.backup.enabled }}
+{{- $b := .Values.backup }}
+{{- $name := printf "%s-backup" (include "sample-api.fullname" .) }}
+# Daily pg_dump, encrypted with age for the configured recipients before it is written. The plaintext never
+# touches the volume. In production the volume would be replaced by object storage with object lock; the
+# scripts only need a directory.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+  annotations:
+    # Uninstalling the release must not delete the backups.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with $b.persistence.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ $b.persistence.size }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-recipients
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+data:
+  recipients: |
+    {{- range (required "backup.recipients needs at least one age public key" $b.recipients) }}
+    {{ . }}
+    {{- end }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  schedule: {{ $b.schedule | quote }}
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "sample-api.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+            app.kubernetes.io/part-of: preview-platform
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: {{ include "sample-api.backupImage" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["backup.sh"]
+              envFrom:
+                - secretRef:
+                    name: {{ required "backup.existingSecret is required when backups are enabled" $b.existingSecret }}
+              env:
+                - name: AGE_RECIPIENTS_FILE
+                  value: /etc/backup/recipients
+                - name: BACKUP_DIR
+                  value: /backups
+                - name: BACKUP_KEEP_DAYS
+                  value: {{ $b.keepDays | quote }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              resources:
+                {{- toYaml $b.resources | nindent 16 }}
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: recipients
+                  mountPath: /etc/backup
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ $name }}
+            - name: recipients
+              configMap:
+                name: {{ $name }}-recipients
+            - name: tmp
+              emptyDir:
+                sizeLimit: 32Mi
+{{- if $b.restoreTest.enabled }}
+---
+# Restores the latest backup into a throwaway PostgreSQL running next to it in the same pod, and checks it
+# against the manifest written at backup time. The production database is never touched, and the private key
+# is only mounted here.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}-restore-test
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: restore-test
+spec:
+  schedule: {{ $b.restoreTest.schedule | quote }}
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A failed restore test is a finding, not a flake: no retry, so the failure stays visible.
+      backoffLimit: 0
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "sample-api.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: restore-test
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            # Native sidecar: started first, stopped by Kubernetes once the check has finished.
+            - name: scratch-database
+              image: {{ include "sample-api.backupImage" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              restartPolicy: Always
+              command: ["docker-entrypoint.sh", "postgres", "-c", "listen_addresses=localhost", "-c", "fsync=off"]
+              env:
+                # Reachable from this pod only (localhost), and the data is thrown away with it.
+                - name: POSTGRES_HOST_AUTH_METHOD
+                  value: trust
+                - name: PGDATA
+                  value: /var/lib/postgresql/data/pgdata
+              startupProbe:
+                exec:
+                  command: ["pg_isready", "-h", "localhost"]
+                periodSeconds: 2
+                failureThreshold: 60
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              resources:
+                {{- toYaml $b.restoreTest.resources | nindent 16 }}
+              volumeMounts:
+                - name: scratch-data
+                  mountPath: /var/lib/postgresql/data
+                - name: scratch-run
+                  mountPath: /var/run/postgresql
+                - name: tmp
+                  mountPath: /tmp
+          containers:
+            - name: restore-check
+              image: {{ include "sample-api.backupImage" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["restore-check.sh"]
+              env:
+                - name: PGHOST
+                  value: localhost
+                - name: PGUSER
+                  value: postgres
+                - name: BACKUP_DIR
+                  value: /backups
+                - name: BACKUP_DATABASE
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $b.existingSecret }}
+                      key: PGDATABASE
+                - name: AGE_IDENTITY_FILE
+                  value: /etc/backup-identity/identity
+                - name: BACKUP_MAX_AGE_HOURS
+                  value: {{ $b.restoreTest.maxAgeHours | quote }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              resources:
+                {{- toYaml $b.resources | nindent 16 }}
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                  readOnly: true
+                - name: identity
+                  mountPath: /etc/backup-identity
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ $name }}
+            - name: identity
+              secret:
+                secretName: {{ required "backup.restoreTest.identitySecret is required when the restore test is enabled" $b.restoreTest.identitySecret }}
+                defaultMode: 0400
+            - name: scratch-data
+              emptyDir:
+                sizeLimit: 2Gi
+            - name: scratch-run
+              emptyDir:
+                sizeLimit: 1Mi
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi
+{{- end }}
+{{- if .Values.networkPolicy.enabled }}
+---
+# Backup pods only talk to the database and DNS. The restore test talks to nothing: its database is local.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "sample-api.commonLabels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [{{ .Release.Name | quote }}]
+      - key: app.kubernetes.io/component
+        operator: In
+        values: [backup, restore-test]
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.database.podSelector | nindent 14 }}
+          {{- with .Values.networkPolicy.database.namespace }}
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+          {{- end }}
+      ports:
+        - port: {{ $b.database.port }}
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+{{- end }}
+{{- end }}

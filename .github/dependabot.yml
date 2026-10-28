@@ -38,6 +38,7 @@ updates:
       - /src/Sample.Migrator
       - /src/Preview.Operator
       - /src/Preview.DataSeeder
+      - /deploy/backup
       - /deploy/helm
     schedule:
       interval: weekly

@@ -58,6 +58,28 @@
       "required": ["existingSecret"],
       "properties": { "existingSecret": { "type": "string" } }
     },
+    "backup": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "$ref": "#/definitions/image" },
+        "schedule": { "type": "string", "minLength": 9 },
+        "keepDays": { "type": "integer", "minimum": 1, "maximum": 365 },
+        "existingSecret": { "type": "string" },
+        "recipients": { "type": "array", "items": { "type": "string", "pattern": "^age1[0-9a-z]{58}$" } },
+        "restoreTest": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "schedule": { "type": "string", "minLength": 9 },
+            "maxAgeHours": { "type": "integer", "minimum": 1 },
+            "identitySecret": { "type": "string" }
+          }
+        }
+      },
+      "if": { "properties": { "enabled": { "const": true } } },
+      "then": { "required": ["existingSecret", "recipients"], "properties": { "recipients": { "minItems": 1 } } }
+    },
     "migrations": {
       "type": "object",
       "required": ["enabled"],

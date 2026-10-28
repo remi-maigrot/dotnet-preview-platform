@@ -1,0 +1,61 @@
+# promtool test rules rules/tests/backup.test.yaml (run by the Cake task Observability-Check)
+rule_files:
+  - ../backup.rules.yaml
+
+evaluation_interval: 1m
+
+tests:
+  - name: A failed restore test pages at once; a failed backup run alone does not
+    interval: 1m
+    input_series:
+      - series: 'kube_job_status_failed{job="kube-state-metrics", namespace="absences", job_name="absences-backup-restore-test-29001"}'
+        values: '0 0 1x5'
+      - series: 'kube_job_owner{job="kube-state-metrics", namespace="absences", job_name="absences-backup-restore-test-29001", owner_kind="CronJob", owner_name="absences-backup-restore-test", owner_is_controller="true"}'
+        values: '1x7'
+      - series: 'kube_job_status_failed{job="kube-state-metrics", namespace="absences", job_name="absences-backup-29001"}'
+        values: '1x7'
+      - series: 'kube_job_owner{job="kube-state-metrics", namespace="absences", job_name="absences-backup-29001", owner_kind="CronJob", owner_name="absences-backup", owner_is_controller="true"}'
+        values: '1x7'
+    alert_rule_test:
+      - alertname: RestoreTestFailed
+        eval_time: 1m
+        exp_alerts: []
+      - alertname: RestoreTestFailed
+        eval_time: 3m
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              namespace: absences
+              owner_name: absences-backup-restore-test
+            exp_annotations:
+              summary: "The restore test absences-backup-restore-test failed in absences"
+              description: "The latest backup could not be restored, or did not match its manifest. Until a restore test passes, assume there is no usable backup."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/restore-from-backup.md
+
+  - name: Backups stop for more than a day
+    # kube-state-metrics keeps exporting the last success time: one sample per minute, the value never moves.
+    interval: 1m
+    input_series:
+      # Last success at t=0, then nothing for 30 hours.
+      - series: 'kube_cronjob_status_last_successful_time{job="kube-state-metrics", namespace="absences", cronjob="absences-backup"}'
+        values: '0x1800'
+      - series: 'kube_cronjob_status_last_successful_time{job="kube-state-metrics", namespace="absences", cronjob="absences-backup-restore-test"}'
+        values: '0x1800'
+    alert_rule_test:
+      - alertname: BackupTooOld
+        eval_time: 25h
+        exp_alerts: []
+      - alertname: BackupTooOld
+        eval_time: 28h
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              namespace: absences
+              cronjob: absences-backup
+            exp_annotations:
+              summary: "No successful backup in absences for 1d 4h 0m 0s"
+              description: "The CronJob absences-backup has not completed for more than a day. kubectl get jobs shows the failed runs."
+              runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/restore-from-backup.md
+      - alertname: RestoreTestNotRunning
+        eval_time: 28h
+        exp_alerts: []

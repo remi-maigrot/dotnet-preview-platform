@@ -58,5 +58,5 @@ jobs:
           args=(--owner "$OWNER" --owner-type "$owner_type" --days "$DAYS")
           if [ "$APPLY" = "true" ]; then args+=(--apply); fi
           python3 .github/scripts/prune_images.py "${args[@]}" \
-            sample-api sample-migrator preview-operator sample-deployer sample-seeder >> "$GITHUB_STEP_SUMMARY"
+            sample-api sample-migrator preview-operator sample-deployer sample-seeder sample-backup >> "$GITHUB_STEP_SUMMARY"
           cat "$GITHUB_STEP_SUMMARY"

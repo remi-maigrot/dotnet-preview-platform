@@ -10,6 +10,7 @@ namespace Build.Tasks;
 [IsDependentOn(typeof(HelmLintTask))]
 [IsDependentOn(typeof(ObservabilityCheckTask))]
 [IsDependentOn(typeof(ScanTask))]
+[IsDependentOn(typeof(BackupTestTask))]
 [IsDependentOn(typeof(SbomTask))]
 [IsDependentOn(typeof(PackageTask))]
 [IsDependentOn(typeof(PublishTask))]

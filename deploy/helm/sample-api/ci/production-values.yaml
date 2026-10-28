@@ -16,3 +16,12 @@ ingress:
 release:
   sha: 0123456789abcdef0123456789abcdef01234567
   author: release-bot
+backup:
+  enabled: true
+  existingSecret: sample-api-backup-database
+  # Public keys generated for this example; their private halves were never kept.
+  recipients:
+    - age1wz5dd834jyjdplanzl9vxggehwfx07cgaf2z7ps3y9qhanceyytsv7jcdl
+    - age15fy3gg8tg5xsqmtu7amysfs926y9d0h83xkrj464nxzp4pu2causqrx775
+  restoreTest:
+    identitySecret: sample-api-backup-identity

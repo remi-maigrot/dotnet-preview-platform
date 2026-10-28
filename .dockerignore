@@ -12,6 +12,7 @@ coverage/
 docs/
 deploy/*
 !deploy/helm/
+!deploy/backup/
 load/
 tests/
 build/

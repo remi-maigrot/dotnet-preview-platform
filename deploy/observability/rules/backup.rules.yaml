@@ -1,0 +1,42 @@
+# Backups and their restore test, from kube-state-metrics. A backup is only proven by a successful restore:
+# both alerts page the owners of the data, not only the platform team.
+# Tested with promtool: rules/tests/backup.test.yaml. Procedure: docs/runbooks/restore-from-backup.md.
+groups:
+  - name: backup
+    rules:
+      - alert: RestoreTestFailed
+        expr: |
+          max by (namespace, owner_name) (
+            kube_job_status_failed{job="kube-state-metrics"}
+            * on (namespace, job_name) group_left (owner_name)
+            kube_job_owner{job="kube-state-metrics", owner_kind="CronJob", owner_name=~".+-restore-test"}
+          ) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: "The restore test {{ $labels.owner_name }} failed in {{ $labels.namespace }}"
+          description: "The latest backup could not be restored, or did not match its manifest. Until a restore test passes, assume there is no usable backup."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/restore-from-backup.md
+
+      # 26 h for a daily schedule: one missed run is tolerated, two are not.
+      - alert: BackupTooOld
+        expr: |
+          time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{job="kube-state-metrics", cronjob=~".+-backup"}) > 26 * 3600
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: "No successful backup in {{ $labels.namespace }} for {{ $value | humanizeDuration }}"
+          description: "The CronJob {{ $labels.cronjob }} has not completed for more than a day. kubectl get jobs shows the failed runs."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/restore-from-backup.md
+
+      - alert: RestoreTestNotRunning
+        expr: |
+          time() - max by (namespace, cronjob) (kube_cronjob_status_last_successful_time{job="kube-state-metrics", cronjob=~".+-restore-test"}) > 50 * 3600
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: "No passing restore test in {{ $labels.namespace }} for {{ $value | humanizeDuration }}"
+          description: "Backups may be fine, but nothing has proven it for two days."
+          runbook_url: https://github.com/remi-maigrot/dotnet-preview-platform/blob/main/docs/runbooks/restore-from-backup.md

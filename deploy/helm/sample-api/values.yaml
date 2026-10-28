@@ -93,6 +93,43 @@ topologySpread:
   enabled: true
   maxSkew: 1
 
+# Encrypted database backups and their daily restore test. See docs/data-protection.md.
+backup:
+  enabled: false
+  image:
+    repository: ghcr.io/remi-maigrot/sample-backup
+    # Defaults to image.tag.
+    tag: ""
+    digest: ""
+  schedule: "15 2 * * *"
+  # Backups older than this are deleted. Erased personal data survives in backups for at most this long.
+  keepDays: 14
+  # Required when enabled. Secret with the libpq variables PGHOST, PGPORT, PGDATABASE, PGUSER and PGPASSWORD of
+  # a role that can read every table.
+  existingSecret: ""
+  # Required when enabled. age public keys (age1...) that can decrypt the backups; public keys are not secrets.
+  # Give at least two: the restore-test key and an offline recovery key kept by someone else.
+  recipients: []
+  persistence:
+    size: 5Gi
+    storageClassName: ""
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+  restoreTest:
+    enabled: true
+    schedule: "45 3 * * *"
+    # The test fails when the latest backup is older than this: it also proves backups still run.
+    maxAgeHours: 26
+    # Required when the restore test is enabled. Secret holding an age private key under the key "identity".
+    identitySecret: ""
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+  database:
+    # Where the database is, for the backup's NetworkPolicy. Defaults to networkPolicy.database.
+    port: 5432
+
 # Time the pod keeps serving after it is removed from the endpoints, so in-flight requests and load
 # balancers catch up before shutdown starts. Must stay below terminationGracePeriodSeconds.
 preStopSleepSeconds: 5

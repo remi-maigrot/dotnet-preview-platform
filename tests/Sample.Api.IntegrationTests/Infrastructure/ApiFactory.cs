@@ -4,14 +4,14 @@ using Microsoft.AspNetCore.Mvc.Testing;
 namespace Sample.Api.IntegrationTests.Infrastructure;
 
 /// <summary>Runs the real API in memory against the test container. Settings are overridable per test.</summary>
-public sealed class ApiFactory(PostgresFixture postgres, IDictionary<string, string?>? overrides = null)
+public sealed class ApiFactory(PostgresFixture postgres, IDictionary<string, string?>? overrides = null, string environment = "Testing")
     : WebApplicationFactory<Program>
 {
     public const string SigningKey = "integration-tests-signing-key-0123456789";
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
+        builder.UseEnvironment(environment);
         var settings = new Dictionary<string, string?>
         {
             ["Database:ConnectionString"] = postgres.ConnectionString,

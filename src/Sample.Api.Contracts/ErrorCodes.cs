@@ -12,4 +12,5 @@ public static class ErrorCodes
     public const string IdempotencyKeyReused = "idempotency.key_reused";
     public const string IdempotencyInProgress = "idempotency.in_progress";
     public const string RateLimited = "request.rate_limited";
+    public const string FaultInjected = "request.fault_injected";
 }

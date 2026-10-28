@@ -1,3 +1,7 @@
+{{- /* The API refuses to start with fault injection in Production; failing here stops it before any rollout. */}}
+{{- if and (eq .Values.environment "Production") (eq (toString (index .Values.config "FaultInjection__Enabled" | default "false")) "true") }}
+{{- fail "config.FaultInjection__Enabled cannot be true when environment is Production" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

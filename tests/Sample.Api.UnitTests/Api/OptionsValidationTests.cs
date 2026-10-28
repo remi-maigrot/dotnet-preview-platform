@@ -64,6 +64,21 @@ public sealed class OptionsValidationTests
             .ShouldBe(valid);
     }
 
+    [Theory]
+    [InlineData("Production", true, false)]
+    [InlineData("Production", false, true)]
+    [InlineData("Preview", true, true)]
+    [InlineData("Development", true, true)]
+    public void FaultInjection_IsRefusedInProduction(string environment, bool enabled, bool valid)
+    {
+        var host = Substitute.For<Microsoft.Extensions.Hosting.IHostEnvironment>();
+        host.EnvironmentName.Returns(environment);
+
+        var result = new FaultInjectionOptionsValidator(host).Validate(null, new FaultInjectionOptions { Enabled = enabled, ErrorRatio = 0.5 });
+
+        result.Succeeded.ShouldBe(valid);
+    }
+
     private static IOptionsMonitor<FeatureFlagsOptions> Flags(bool external)
     {
         var monitor = Substitute.For<IOptionsMonitor<FeatureFlagsOptions>>();

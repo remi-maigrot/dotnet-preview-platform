@@ -21,6 +21,7 @@ internal static class ApiExtensions
         services.AddOpenApi();
         services.AddJwtAuthentication(configuration);
         services.AddApiRateLimiting(configuration);
+        services.AddFaultInjection(configuration);
 
         services.AddHealthChecks()
             .AddDbContextCheck<AppDbContext>("database", tags: ["ready"]);
@@ -45,6 +46,7 @@ internal static class ApiExtensions
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseRateLimiter();
+        app.UseFaultInjection();
 
         app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
         app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });

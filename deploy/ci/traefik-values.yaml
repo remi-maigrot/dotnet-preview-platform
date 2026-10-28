@@ -1,0 +1,16 @@
+# Traefik in kind, configured like the one k3s ships: namespace kube-system, default ingress class "traefik".
+service:
+  type: NodePort
+ports:
+  web:
+    nodePort: 30080
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+  name: traefik
+providers:
+  kubernetesIngress:
+    enabled: true
+logs:
+  general:
+    level: WARN

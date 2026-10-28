@@ -1,0 +1,154 @@
+name: Preview
+
+# One isolated environment per pull request, created by the preview operator, tested, reported on the pull
+# request, then torn down. In CI the cluster itself is ephemeral (kind): the same operator would run on a shared
+# cluster in a real setup, and previews would then live for their TTL instead of the length of this job.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  preview:
+    name: Preview environment
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+    env:
+      PR: ${{ github.event.pull_request.number }}
+      SHA: ${{ github.event.pull_request.head.sha }}
+      # Forks get a read-only token: they cannot push images nor comment, but still get the full test run.
+      SAME_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Registry name
+        run: echo "REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - name: Build images (tagged with the commit SHA)
+        run: dotnet run --project build -- --target Docker-Build --registry "$REGISTRY" --image-tag "$SHA"
+
+      - name: Log in to GHCR
+        if: env.SAME_REPOSITORY == 'true'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Push images to GHCR
+        if: env.SAME_REPOSITORY == 'true'
+        run: |
+          for image in sample-api sample-migrator preview-operator sample-deployer sample-seeder; do
+            docker push --quiet "${REGISTRY}/${image}:${SHA}"
+          done
+
+      - name: Create the preview environment
+        uses: ./.github/actions/preview-environment
+        with:
+          registry: ${{ env.REGISTRY }}
+          tag: ${{ env.SHA }}
+          pull-request: ${{ env.PR }}
+
+      - name: Smoke tests
+        id: smoke
+        continue-on-error: true
+        run: dotnet test --project tests/Smoke.Tests -- --report-trx --results-directory artifacts/smoke
+
+      - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+
+      - name: Load test (p95 < 300 ms, errors < 1 %)
+        id: load
+        continue-on-error: true
+        run: k6 run --quiet -e BASE_URL="$SMOKE_BASE_URL" -e SIGNING_KEY="$SMOKE_SIGNING_KEY" load/preview-smoke.js
+
+      - name: Collect diagnostics
+        if: steps.smoke.outcome != 'success' || steps.load.outcome != 'success'
+        run: |
+          mkdir -p artifacts/diagnostics
+          kubectl get previewenvironments -o yaml > artifacts/diagnostics/previewenvironments.yaml
+          kubectl get events --all-namespaces --sort-by=.lastTimestamp > artifacts/diagnostics/events.txt
+          kubectl --namespace preview-system logs deployment/preview-operator --tail 500 > artifacts/diagnostics/operator.log
+          kubectl --namespace "pr-${PR}" logs deployment/sample-api --tail 500 > artifacts/diagnostics/api.log || true
+
+      - name: Comment on the pull request
+        if: ${{ !cancelled() && env.SAME_REPOSITORY == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          LOAD: ${{ steps.load.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          icon() { if [ "$1" = "success" ]; then echo "✅"; else echo "❌"; fi; }
+          {
+            echo "<!-- preview-environment -->"
+            echo "### Preview environment for #${PR}"
+            echo
+            echo "Commit \`${SHA:0:12}\`, deployed by the preview operator on an ephemeral kind cluster."
+            echo
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Smoke tests | $(icon "$SMOKE") ${SMOKE} |"
+            echo "| Load test | $(icon "$LOAD") ${LOAD} |"
+            echo
+            if [ -f load/summary.md ]; then cat load/summary.md; echo; fi
+            echo "[Workflow run](${RUN_URL})"
+          } > comment.md
+          # Update the previous report instead of adding one comment per push.
+          existing="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- preview-environment -->"))) | .id' | tail -n 1)"
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -F body=@comment.md > /dev/null
+          else
+            gh pr comment "$PR" --body-file comment.md
+          fi
+
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: preview-reports
+          path: |
+            artifacts/smoke
+            artifacts/diagnostics
+            load/summary.md
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Teardown (and check the finalizer cleans up)
+        if: always()
+        run: |
+          kubectl delete previewenvironment "pr-${PR}" --wait --timeout 2m || true
+          if kubectl get namespace "pr-${PR}" > /dev/null 2>&1; then
+            echo "::warning::namespace pr-${PR} still exists after the PreviewEnvironment was deleted"
+          fi
+
+      - name: Fail when a check failed
+        if: steps.smoke.outcome != 'success' || steps.load.outcome != 'success'
+        run: |
+          echo "::error::smoke tests: ${{ steps.smoke.outcome }}, load test: ${{ steps.load.outcome }}"
+          exit 1

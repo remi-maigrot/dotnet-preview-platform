@@ -1,0 +1,113 @@
+name: Preview environment
+description: >-
+  Creates an ephemeral kind cluster, installs the ingress controller and the preview operator, applies a
+  PreviewEnvironment and waits for it to be Ready. Exports SMOKE_BASE_URL and SMOKE_SIGNING_KEY for the next steps.
+
+inputs:
+  registry:
+    description: Registry prefix of the images (for example ghcr.io/owner).
+    required: true
+  tag:
+    description: Image tag (commit SHA).
+    required: true
+  pull-request:
+    description: Pull request number of the preview.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Create kind cluster
+      uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+      with:
+        version: v0.33.0
+        cluster_name: preview
+        config: deploy/ci/kind-config.yaml
+        wait: 120s
+
+    - name: Install the ingress controller
+      shell: bash
+      run: |
+        helm repo add traefik https://traefik.github.io/charts
+        helm upgrade --install traefik traefik/traefik --version 42.1.3 \
+          --namespace kube-system --values deploy/ci/traefik-values.yaml --wait --timeout 3m
+
+    - name: Load images into the cluster
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        # Images are loaded rather than pulled: no registry credentials inside the cluster, and pull requests
+        # from forks (which cannot push to the registry) get a preview too.
+        for image in sample-api sample-migrator preview-operator sample-deployer sample-seeder; do
+          ref="${REGISTRY}/${image}:${TAG}"
+          docker image inspect "$ref" > /dev/null 2>&1 || docker pull --quiet "$ref"
+          kind load docker-image "$ref" --name preview
+        done
+
+    - name: Install the operator
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        overlay="artifacts/ci/operator"
+        mkdir -p "$overlay"
+        cat > "$overlay/kustomization.yaml" <<YAML
+        apiVersion: kustomize.config.k8s.io/v1beta1
+        kind: Kustomization
+        resources:
+          - ../../../deploy/operator
+        images:
+          - name: ghcr.io/remi-maigrot/preview-operator
+            newName: ${REGISTRY}/preview-operator
+            newTag: "${TAG}"
+        configMapGenerator:
+          - name: preview-operator-config
+            namespace: preview-system
+            behavior: merge
+            literals:
+              - Operator__DeployerImage=${REGISTRY}/sample-deployer:${TAG}
+              - Operator__SeederImage=${REGISTRY}/sample-seeder:${TAG}
+              - Operator__ImagePullPolicy=Never
+              - Operator__CollectorEndpoint=
+        YAML
+        kubectl apply --kustomize "$overlay"
+        kubectl --namespace preview-system rollout status deployment/preview-operator --timeout 3m
+
+    - name: Create the preview environment
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        TAG: ${{ inputs.tag }}
+        PR: ${{ inputs.pull-request }}
+      run: |
+        cat <<YAML | kubectl apply -f -
+        apiVersion: platform.remimaigrot.dev/v1alpha1
+        kind: PreviewEnvironment
+        metadata:
+          name: pr-${PR}
+        spec:
+          pullRequest: ${PR}
+          image: ${REGISTRY}/sample-api:${TAG}
+          ttl: 1h
+          seedData: true
+          commitSha: "${TAG}"
+        YAML
+        if ! kubectl wait "previewenvironment/pr-${PR}" --for=jsonpath='{.status.phase}'=Ready --timeout=6m; then
+          kubectl get previewenvironment "pr-${PR}" -o yaml
+          exit 1
+        fi
+
+    - name: Export the environment
+      shell: bash
+      env:
+        PR: ${{ inputs.pull-request }}
+      run: |
+        key="$(kubectl --namespace "pr-${PR}" get secret sample-api-secrets -o jsonpath='{.data.Authentication__Jwt__SigningKey}' | base64 --decode)"
+        echo "::add-mask::${key}"
+        {
+          echo "SMOKE_BASE_URL=http://pr-${PR}.preview.localtest.me"
+          echo "SMOKE_SIGNING_KEY=${key}"
+        } >> "$GITHUB_ENV"

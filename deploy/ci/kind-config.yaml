@@ -1,0 +1,10 @@
+# Ephemeral CI cluster. The ingress controller listens on node port 30080, mapped to port 80 of the runner, so
+# pr-<n>.preview.localtest.me (which resolves to 127.0.0.1) reaches the preview exactly as in k3d.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 80
+        protocol: TCP

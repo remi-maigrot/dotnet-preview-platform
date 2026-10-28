@@ -3,6 +3,10 @@
 [![CI](https://github.com/remi-maigrot/dotnet-preview-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/remi-maigrot/dotnet-preview-platform/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/remi-maigrot/dotnet-preview-platform/badges/coverage.json)](build/README.md)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-operator-326CE5?logo=kubernetes&logoColor=white)
+![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-traces%20%7C%20metrics%20%7C%20logs-425CC7?logo=opentelemetry&logoColor=white)
+![Helm](https://img.shields.io/badge/Helm-charts-0F1689?logo=helm&logoColor=white)
 
 A small internal developer platform for .NET 10 services on Kubernetes. Every pull request gets its own
 isolated environment, created by an operator written in C#, seeded with data, tested, and deleted when its
@@ -10,6 +14,17 @@ TTL expires. Releases go through seven gates, then a canary that rolls itself ba
 
 The service it runs is a deliberately ordinary one: an absence request API (employees ask for leave,
 managers decide), there so the platform has a real application to build, migrate, test and release.
+
+![Sample API dashboard in Grafana, on the local environment under load](docs/assets/grafana-sample-api.png)
+
+| | |
+|---|---|
+| Local platform from nothing | `devctl up`, about 3 minutes |
+| A preview environment | Ready in 20 to 30 seconds, deleted after its TTL |
+| Release gates | 7, from tests to load tests on a real preview |
+| Tests | 292: unit, integration on real PostgreSQL, architecture, operator, CLI |
+| Line coverage | 100 % domain, 98.6 % application (the build fails under 80 %) |
+| Build warnings | 0, warnings are errors |
 
 ## Try it
 
@@ -72,6 +87,43 @@ against it, and posts the results as a single comment on the pull request. Both 
 so whatever fails in CI fails the same way on your machine. The longer walkthrough, with a sequence diagram
 from pull request to production, is in [docs/architecture.md](docs/architecture.md).
 
+### The life of a preview
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> Pending: PreviewEnvironment pr-N applied
+  Pending --> Provisioning
+  Provisioning --> Ready: namespace, policies, database,<br/>migrations, API, seed data
+  Provisioning --> Failed: deploy or seed Job failed
+  Ready --> Provisioning: new image pushed
+  Failed --> Provisioning: new image pushed
+  Ready --> Expired: TTL reached
+  Failed --> Expired: TTL reached
+  Expired --> [*]: finalizer deletes the namespace
+```
+
+Closing the pull request deletes the resource at any point, and the same finalizer cleans up.
+
+### The road to a release
+
+```mermaid
+flowchart TB
+  subgraph check [Is the code right?]
+    direction LR
+    tag([tag v1.4.0]) --> g1[1 Tests<br/>coverage ≥ 80 %] --> g2[2 Architecture<br/>rules] --> g3[3 Migrations<br/>on previous data]
+  end
+  subgraph ship [Is the artifact safe to run?]
+    direction LR
+    g4[4 No critical CVE<br/>amd64 + arm64] --> g5[5 SBOM] --> g6[6 cosign signature<br/>+ provenance] --> g7[7 Smoke + k6<br/>on a real preview]
+  end
+  subgraph prod [Production]
+    direction LR
+    pub([version tag on the<br/>tested digests]) --> canary[canary 10 → 30 → 60 %<br/>aborted if it misses the SLO]
+  end
+  check --> ship --> prod
+```
+
 ## What this project demonstrates
 
 **A developer CLI.** `devctl` (System.CommandLine, Spectre.Console) wraps k3d, Helm and the Kubernetes API:
@@ -79,7 +131,37 @@ from pull request to production, is in [docs/architecture.md](docs/architecture.
 documented exit codes, so scripts can rely on it. `preview diagnose` explains a broken preview: failing pods,
 events, missing images, recent failed requests from Tempo. It can also pass the report to any
 OpenAI-compatible endpoint you configure. Nothing is sent unless you set one, and secrets and emails are
-redacted first.
+redacted first. Here it is on a preview deployed with an image tag that doesn't exist:
+
+```text
+$ devctl preview diagnose --pr 13
+# Preview pr-13
+
+- Phase: Provisioning
+- Image: preview-registry.localhost:5050/sample-api:does-not-exist
+
+## Findings
+
+- **Error: The image of sample-api-migrate-5ht6n/migrate cannot be pulled.** Back-off pulling image
+  "preview-registry.localhost:5050/sample-migrator:does-not-exist": ErrImagePull: ... not found
+  Check that this tag exists in the registry and that the cluster can reach it (devctl up pushes local builds).
+
+## Conditions
+
+- NamespaceReady=True Applied Namespace pr-13 and its policies are in place.
+- DatabaseReady=True Running PostgreSQL accepts connections.
+- ApplicationDeployed=False InProgress Deploying preview-registry.localhost:5050/sample-api:does-not-exist (job deploy-0dc8f9970d).
+- Ready=False Provisioning The environment is being provisioned.
+
+## Pods
+
+- sample-api-migrate-5ht6n: Pending
+  - migrate: ImagePullBackOff, 0 restart(s)
+...
+```
+
+The API image was not the one that failed. The migrator runs first, and its missing image is what blocks the
+preview.
 
 **A Kubernetes operator in C#.** A cluster-scoped `PreviewEnvironment` resource becomes a namespace with Pod
 Security `restricted`, a quota, deny-by-default network policies, generated credentials, a PostgreSQL
@@ -110,6 +192,10 @@ alert rules have unit tests run by `promtool` in CI. Alerts on the SLO follow th
 method, exemplars link a latency spike to its trace, and each release leaves a marker on the dashboards.
 
 ![Sample API dashboard during the canary test: release markers, the faulty canary's error spike, back to zero after the abort](docs/assets/grafana-canary-abort.png)
+
+*The canary test seen from Grafana. The purple lines are releases. The second release fails half of its
+requests: the analysis aborts it, traffic goes back to the stable version and errors drop to zero. The third
+release is healthy and promoted.*
 
 ### Across all six
 

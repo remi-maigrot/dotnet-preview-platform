@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base installation. devctl and the preview workflow layer an overlay on top that sets the image tags
+# (commit SHA) and the preview domain.
+resources:
+  - ../crds
+  - namespace.yaml
+  - serviceaccount.yaml
+  - rbac.yaml
+  - deployment.yaml
+  - networkpolicy.yaml
+
+images:
+  - name: preview-operator
+    newName: ghcr.io/remi-maigrot/preview-operator
+
+configMapGenerator:
+  - name: preview-operator-config
+    namespace: preview-system
+    literals:
+      - Operator__Namespace=preview-system
+      - Operator__PreviewDomain=preview.localtest.me
+      - Operator__DeployerImage=ghcr.io/remi-maigrot/sample-deployer
+      - Operator__CollectorEndpoint=http://otel-collector.observability:4317

@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: preview-operator
+  namespace: preview-system
+  labels:
+    app.kubernetes.io/name: preview-operator
+spec:
+  # Two replicas: one leads, the other takes over within the lease duration (15 s) if the leader dies.
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: preview-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: preview-operator
+        app.kubernetes.io/part-of: preview-platform
+    spec:
+      serviceAccountName: preview-operator
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: preview-operator
+      containers:
+        - name: operator
+          image: preview-operator
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ASPNETCORE_HTTP_PORTS
+              value: "8080"
+          envFrom:
+            - configMapRef:
+                name: preview-operator-config
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Mi
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: preview-operator
+  namespace: preview-system
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: preview-operator
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: preview-operator-metrics
+  namespace: preview-system
+  labels:
+    app.kubernetes.io/name: preview-operator
+spec:
+  selector:
+    app.kubernetes.io/name: preview-operator
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

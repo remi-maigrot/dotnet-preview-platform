@@ -1,0 +1,162 @@
+# Permissions of the preview operator, kept to what the code actually calls.
+#
+# Cluster-wide, the operator can only manage PreviewEnvironments, create and delete namespaces, and create
+# RoleBindings to two named ClusterRoles. Everything else it does happens inside the preview namespaces it
+# created, through a RoleBinding it applies right after the namespace (see preview-operator-namespace).
+# It has no standing access to Secrets, Deployments or Jobs of any other namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: preview-operator
+rules:
+  # Read the resources it reconciles; watch drives the work queue.
+  - apiGroups: [platform.remimaigrot.dev]
+    resources: [previewenvironments]
+    verbs: [get, list, watch]
+  # Add and remove its finalizer (merge patch), delete a preview whose TTL is over.
+  - apiGroups: [platform.remimaigrot.dev]
+    resources: [previewenvironments]
+    verbs: [patch, delete]
+  # Write status through the status subresource only.
+  - apiGroups: [platform.remimaigrot.dev]
+    resources: [previewenvironments/status]
+    verbs: [patch]
+  # Required to set blockOwnerDeletion on the namespace's ownerReference to its PreviewEnvironment.
+  - apiGroups: [platform.remimaigrot.dev]
+    resources: [previewenvironments/finalizers]
+    verbs: [update]
+  # One namespace per preview: created by server-side apply, deleted by the finalizer.
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [get, create, patch, delete]
+  # Bindings inside the preview namespaces. Namespaces are created at run time, so this cannot be a Role.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [rolebindings]
+    verbs: [get, create, patch]
+  # "bind" lets it reference these two ClusterRoles in a RoleBinding without holding their permissions
+  # cluster-wide. resourceNames keeps it from binding anything else.
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles]
+    verbs: [bind]
+    resourceNames: [preview-operator-namespace, preview-deployer]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: preview-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: preview-operator
+subjects:
+  - kind: ServiceAccount
+    name: preview-operator
+    namespace: preview-system
+---
+# Granted to the operator inside each preview namespace, by the operator itself (RoleBinding "preview-operator").
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: preview-operator-namespace
+rules:
+  # Quota, limits, policies, database objects and the deployer's account: applied on every reconciliation.
+  - apiGroups: [""]
+    resources: [resourcequotas, limitranges, configmaps, services, serviceaccounts]
+    verbs: [get, create, patch]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, create, patch]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get, create, patch]
+  # Generated credentials: created once, read back to rebuild derived secrets, never updated.
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, create]
+  # Deployment and seed jobs.
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, create, patch]
+  # Readiness of the API, deployed by helm.
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [get]
+---
+# Granted to the "deployer" ServiceAccount inside each preview namespace: what `helm upgrade --install` of the
+# sample-api chart needs, and nothing more. helm stores its release history in Secrets.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: preview-deployer
+rules:
+  - apiGroups: [""]
+    resources: [secrets, configmaps, services, serviceaccounts]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods, events]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses, networkpolicies]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    verbs: [get, list, watch, create, update, patch, delete]
+---
+# Leader election: one Lease, in the operator's own namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: preview-operator-leader-election
+  namespace: preview-system
+rules:
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, create, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: preview-operator-leader-election
+  namespace: preview-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: preview-operator-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: preview-operator
+    namespace: preview-system
+---
+# Events about cluster-scoped PreviewEnvironments are recorded in "default", where kubectl looks for them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: preview-operator-events
+  namespace: default
+rules:
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: preview-operator-events
+  namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: preview-operator-events
+subjects:
+  - kind: ServiceAccount
+    name: preview-operator
+    namespace: preview-system

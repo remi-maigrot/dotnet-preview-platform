@@ -87,6 +87,10 @@ against it, and posts the results as a single comment on the pull request. Both 
 so whatever fails in CI fails the same way on your machine. The longer walkthrough, with a sequence diagram
 from pull request to production, is in [docs/architecture.md](docs/architecture.md).
 
+This is the comment a pull request gets, here on a dependency update opened by Dependabot:
+
+<img src="docs/assets/preview-comment.png" alt="Pull request comment with the smoke test and load test results of the preview" width="560">
+
 ### The life of a preview
 
 ```mermaid
@@ -260,9 +264,9 @@ Each of these has an ADR in [docs/adr](docs/adr) with the alternatives that were
   the preview lives as long as the job. That proves the operator, the chart and the images, but not a real
   network, storage class or node size. On a real platform the same operator runs on a shared cluster,
   previews live for their TTL, and pull requests only apply and delete the resource.
-- **The workflows have only been run locally so far.** They pass actionlint and zizmor, and every step they
-  run is a Cake task that passes on my machine. Anything that only exists on GitHub (OIDC signing, GHCR,
-  the release itself, the badges branch) will be proven by the first runs there.
+- **No release has been cut yet.** CI, previews, CodeQL and the canary test run on GitHub. The release
+  workflow, and with it keyless signing and publishing to GHCR, will run for the first time with the first
+  tag.
 - **No admission control on signatures.** Images are signed, but the cluster doesn't yet refuse unsigned
   ones. A policy controller is the next step.
 - **Backups stay in the cluster.** They go to a persistent volume. A real setup writes them to object storage

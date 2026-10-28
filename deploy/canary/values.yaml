@@ -1,0 +1,31 @@
+# Values of the canary end-to-end test (deploy/canary/e2e.sh): the real chart, with short canary steps so a
+# full rollout takes about three minutes.
+replicaCount: 2
+environment: Preview
+autoscaling:
+  enabled: false
+secrets:
+  existingSecret: sample-api-secrets
+migrations:
+  existingSecret: sample-api-migrator-secrets
+ingress:
+  enabled: true
+  host: canary.preview.localtest.me
+opentelemetry:
+  endpoint: http://otel-collector.observability:4317
+config:
+  RateLimiting__PermitLimit: "5000"
+rollout:
+  enabled: true
+  steps:
+    - setWeight: 25
+    - pause: { duration: 75s }
+    - setWeight: 50
+    - pause: { duration: 75s }
+  analysis:
+    interval: 15s
+    initialDelay: 30s
+    failureLimit: 1
+resources:
+  requests: { cpu: 50m, memory: 128Mi }
+  limits: { cpu: 500m, memory: 256Mi }

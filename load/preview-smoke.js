@@ -5,16 +5,11 @@
 //
 // Thresholds mirror the SLO in docs/observability.md: 95 % of requests under 300 ms, less than 1 % errors.
 import http from 'k6/http';
-import crypto from 'k6/crypto';
-import encoding from 'k6/encoding';
 import { check, sleep } from 'k6';
+import { EMPLOYEE, MANAGER, token } from './lib/token.js';
 
 const BASE_URL = __ENV.BASE_URL;
 const SIGNING_KEY = __ENV.SIGNING_KEY;
-
-// Fixed accounts created by the preview data seeder (src/Preview.DataSeeder/KnownAccounts.cs).
-const EMPLOYEE = '6f1c2c1e-7a3b-4c8e-9a51-0b6f0d1a0002';
-const MANAGER = '6f1c2c1e-7a3b-4c8e-9a51-0b6f0d1a0001';
 
 export const options = {
   scenarios: {
@@ -34,23 +29,6 @@ export const options = {
   },
 };
 
-function base64url(value) {
-  return encoding.b64encode(value, 'rawurl');
-}
-
-// HS256 token signed with the preview's key, the way the API expects it (issuer, audience, sub, role).
-function token(subject, manager) {
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
-  const claims = { sub: subject, iss: 'preview-platform', aud: 'sample-api', iat: now, nbf: now, exp: now + 900 };
-  if (manager) {
-    claims.role = 'manager';
-  }
-  const payload = base64url(JSON.stringify(claims));
-  const signature = crypto.hmac('sha256', SIGNING_KEY, `${header}.${payload}`, 'base64rawurl');
-  return `${header}.${payload}.${signature}`;
-}
-
 export function setup() {
   if (!BASE_URL || !SIGNING_KEY) {
     throw new Error('BASE_URL and SIGNING_KEY are required.');
@@ -59,7 +37,7 @@ export function setup() {
   if (ready.status !== 200) {
     throw new Error(`The environment is not ready: /health/ready returned ${ready.status}.`);
   }
-  return { employee: token(EMPLOYEE, false), manager: token(MANAGER, true) };
+  return { employee: token(SIGNING_KEY, EMPLOYEE, false), manager: token(SIGNING_KEY, MANAGER, true) };
 }
 
 function mondayInWeeks(weeks) {

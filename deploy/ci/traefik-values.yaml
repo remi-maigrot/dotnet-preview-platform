@@ -11,6 +11,9 @@ ingressClass:
 providers:
   kubernetesIngress:
     enabled: true
+  # IngressRoute and TraefikService: the canary test routes through a weighted TraefikService.
+  kubernetesCRD:
+    enabled: true
 logs:
   general:
     level: WARN

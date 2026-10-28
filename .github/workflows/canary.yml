@@ -1,0 +1,92 @@
+name: Canary
+
+# End-to-end test of progressive delivery: the API is released as an Argo Rollout on an ephemeral cluster with
+# the observability stack, a release that fails half of its requests must be aborted by the analysis, and a
+# healthy one promoted (deploy/canary/e2e.sh). It needs Prometheus, so it is heavier than the preview: it runs
+# when the chart, the canary test or the fault injection change, every week, and on demand.
+
+on:
+  pull_request:
+    paths:
+      - deploy/helm/**
+      - deploy/canary/**
+      - deploy/observability/**
+      - src/Sample.Api/Http/FaultInjection.cs
+      - .github/workflows/canary.yml
+  schedule:
+    - cron: "42 5 * * 2"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  REGISTRY: ghcr.io/canary-test
+
+jobs:
+  canary:
+    name: Canary abort and promotion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.1
+
+      - uses: grafana/setup-k6-action@43b9fc21641a76002687994433dd586f56e791b1 # v1.2.2
+
+      - name: Build images
+        run: dotnet run --project build -- --target Docker-Build --registry "$REGISTRY" --image-tag "$GITHUB_SHA"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          version: v0.33.0
+          cluster_name: canary
+          config: deploy/ci/kind-config.yaml
+          wait: 120s
+
+      - name: Ingress controller and images
+        run: |
+          helm upgrade --install traefik traefik --repo https://traefik.github.io/charts --version 42.1.3 \
+            --namespace kube-system --values deploy/ci/traefik-values.yaml --wait --timeout 3m
+          for image in sample-api sample-migrator sample-seeder; do
+            kind load docker-image "${REGISTRY}/${image}:${GITHUB_SHA}" --name canary
+          done
+
+      - name: Observability stack
+        run: |
+          # The Cake task registers the chart repositories in a throwaway Helm configuration and builds the
+          # dependencies; the install reuses what it downloaded.
+          dotnet run --project build -- --target Observability-Check
+          helm upgrade --install observability deploy/observability --namespace observability --create-namespace \
+            --wait --timeout 12m
+
+      - name: Canary end-to-end test
+        run: deploy/canary/e2e.sh "$REGISTRY" "$GITHUB_SHA" http://canary.preview.localtest.me
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl -n canary-e2e get rollout,analysisrun,replicaset,pods -o wide || true
+          kubectl -n canary-e2e describe rollout sample-api || true
+          kubectl -n canary-e2e get analysisrun -o yaml || true
+          kubectl -n argo-rollouts logs deployment/argo-rollouts --tail 200 || true

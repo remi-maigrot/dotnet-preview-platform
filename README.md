@@ -22,7 +22,7 @@ managers decide), there so the platform has a real application to build, migrate
 | Local platform from nothing | `devctl up`, about 3 minutes |
 | A preview environment | Ready in 20 to 30 seconds, deleted after its TTL |
 | Release gates | 7, from tests to load tests on a real preview |
-| Tests | 292: unit, integration on real PostgreSQL, architecture, operator, CLI |
+| Tests | 293: unit, integration on real PostgreSQL, architecture, operator, CLI |
 | Line coverage | 100 % domain, 98.6 % application (the build fails under 80 %) |
 | Build warnings | 0, warnings are errors |
 

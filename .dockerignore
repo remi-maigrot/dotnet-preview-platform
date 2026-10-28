@@ -1,0 +1,21 @@
+# Only sources and build inputs go into the build context.
+**/bin/
+**/obj/
+**/TestResults/
+artifacts/
+coverage/
+.git/
+.github/
+.vs/
+.idea/
+.vscode/
+docs/
+deploy/
+load/
+tests/
+build/
+**/*.user
+**/.secrets/
+.env
+.env.*
+*.md

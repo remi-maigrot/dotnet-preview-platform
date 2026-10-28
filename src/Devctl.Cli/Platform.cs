@@ -18,7 +18,7 @@ internal static class Platform
     public const string ObservabilityNamespace = "observability";
     public const string MonitoringNamespace = "monitoring";
 
-    public static readonly string[] Images = ["sample-api", "sample-migrator", "preview-operator", "sample-deployer"];
+    public static readonly string[] Images = ["sample-api", "sample-migrator", "preview-operator", "sample-deployer", "sample-seeder"];
 
     public static string NamespaceOf(int pullRequest) => pullRequest == 0 ? "local" : $"pr-{pullRequest}";
 

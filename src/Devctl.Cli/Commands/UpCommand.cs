@@ -185,6 +185,7 @@ internal sealed class LocalPlatform(DevctlContext context, Output output)
                 PullRequest = PreviewEnvironmentSpec.LocalEnvironment,
                 Image = $"{Platform.RegistryFromCluster}/sample-api:{tag}",
                 Ttl = "72h",
+                SeedData = true,
                 CommitSha = tag,
             },
         };
@@ -212,6 +213,7 @@ internal sealed class LocalPlatform(DevctlContext context, Output output)
                 behavior: merge
                 literals:
                   - Operator__DeployerImage={Platform.RegistryFromCluster}/sample-deployer:{tag}
+                  - Operator__SeederImage={Platform.RegistryFromCluster}/sample-seeder:{tag}
                   - Operator__PublicPort={port}
                   - Operator__PreviewDomain={Platform.PreviewDomain}
             """;

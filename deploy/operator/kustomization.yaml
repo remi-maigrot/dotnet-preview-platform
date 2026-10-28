@@ -22,4 +22,5 @@ configMapGenerator:
       - Operator__Namespace=preview-system
       - Operator__PreviewDomain=preview.localtest.me
       - Operator__DeployerImage=ghcr.io/remi-maigrot/sample-deployer
+      - Operator__SeederImage=ghcr.io/remi-maigrot/sample-seeder
       - Operator__CollectorEndpoint=http://otel-collector.observability:4317

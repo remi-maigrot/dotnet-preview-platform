@@ -13,6 +13,9 @@ internal static class ApiExtensions
     public static IServiceCollection AddApi(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<HostOptions>(configuration.GetSection("Host"));
+        // The API is stateless (bearer tokens, no cookies, no antiforgery): Data Protection keys never need to
+        // survive a restart, so its "keys are not persisted" warnings at startup are noise.
+        services.AddLogging(logging => logging.AddFilter("Microsoft.AspNetCore.DataProtection", LogLevel.Error));
         services.AddProblemDetails();
         services.AddValidation();
         services.AddOpenApi();

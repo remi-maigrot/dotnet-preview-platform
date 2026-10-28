@@ -1,5 +1,5 @@
 # The operator only needs the API server (any address, ports 443/6443) and DNS. Its /metrics endpoint is open
-# to the monitoring namespace.
+# to the observability namespace (Prometheus).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -14,7 +14,7 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: monitoring
+              kubernetes.io/metadata.name: observability
       ports:
         - port: http
   egress:

@@ -30,7 +30,7 @@ internal sealed class OperatorMetrics
         meter.CreateObservableGauge("preview_operator_leader", () => Volatile.Read(ref _isLeader), "1",
             "1 when this replica holds the leader lease.");
         meter.CreateObservableGauge("preview_operator_workqueue_depth", () => Volatile.Read(ref _queueDepth), "{item}",
-            "Items waiting to be reconciled.");
+            "Items due and waiting for a worker (scheduled requeues excluded).");
     }
 
     public void Reconciled(TimeSpan duration, bool success)

@@ -59,7 +59,7 @@ internal sealed class PreviewController(
 
                     var item = KubernetesJson.Deserialize<PreviewEnvironment>(KubernetesJson.Serialize(payload));
                     queue.Add(item.Metadata.Name);
-                    metrics.SetQueueDepth(queue.Count);
+                    metrics.SetQueueDepth(queue.Pending);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -125,7 +125,7 @@ internal sealed class PreviewController(
             finally
             {
                 queue.Done(name);
-                metrics.SetQueueDepth(queue.Count);
+                metrics.SetQueueDepth(queue.Pending);
             }
         }
     }

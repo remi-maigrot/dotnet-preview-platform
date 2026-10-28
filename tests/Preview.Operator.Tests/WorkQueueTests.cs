@@ -36,6 +36,24 @@ public sealed class WorkQueueTests : IDisposable
     }
 
     [Fact]
+    public async Task Pending_CountsKeysDueNowOnly()
+    {
+        _queue.AddAfter("expires-later", TimeSpan.FromHours(1));
+        _queue.Add("a");
+        _queue.Add("b");
+        _queue.Pending.ShouldBe(2);
+
+        var key = await TakeAsync();
+        _queue.Pending.ShouldBe(1, "a key being processed is not waiting");
+        _queue.Count.ShouldBe(2);
+
+        _queue.Done(key);
+        await TakeAsync();
+        _queue.Pending.ShouldBe(0);
+        _queue.Count.ShouldBe(1, "the scheduled key is still there");
+    }
+
+    [Fact]
     public async Task AddAfter_WaitsForTheDelay()
     {
         _queue.AddAfter("a", TimeSpan.FromSeconds(10));

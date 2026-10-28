@@ -38,6 +38,21 @@ internal sealed class WorkQueue : IDisposable
         }
     }
 
+    /// <summary>
+    /// Keys due now and waiting for a worker. Scheduled keys (a TTL expiry, a backoff) are not counted: every
+    /// preview has one, so they say nothing about the operator keeping up.
+    /// </summary>
+    public int Pending
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _dirty.Count(k => !_processing.Contains(k));
+            }
+        }
+    }
+
     public void Add(string key)
     {
         lock (_lock)

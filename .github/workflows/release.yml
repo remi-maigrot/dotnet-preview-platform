@@ -169,7 +169,7 @@ jobs:
           done
       - name: Scan the Kubernetes manifests
         run: |
-          trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 \
+          trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore.yaml \
             --helm-values deploy/helm/sample-api/ci/production-values.yaml deploy
 
   sbom:

@@ -30,6 +30,9 @@ public sealed class ScanTask : FrostingTask<BuildContext>
 
         context.Run("trivy", new ProcessArgumentBuilder()
             .Append("config --quiet --severity HIGH,CRITICAL --exit-code 1")
+            .AppendSwitchQuoted("--ignorefile", ".trivyignore.yaml")
+            // Upstream charts downloaded by helm dependency build: their findings belong to their projects.
+            .AppendSwitchQuoted("--skip-dirs", "deploy/observability/charts")
             .AppendSwitchQuoted("--helm-values", context.ChartDirectory.CombineWithFilePath("ci/production-values.yaml").FullPath)
             .AppendQuoted("deploy"));
     }

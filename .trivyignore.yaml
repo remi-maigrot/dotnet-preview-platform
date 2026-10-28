@@ -1,0 +1,13 @@
+# Accepted findings of `trivy config`, each with the reason. Scoped to one file: the same finding elsewhere fails.
+misconfigurations:
+  - id: KSV-0041
+    paths: ["**/operator/rbac.yaml"]
+    statement: >-
+      The operator creates the database credentials and the connection-string Secrets of each preview. The
+      ClusterRole preview-operator-namespace is only bound inside preview namespaces, by a RoleBinding the
+      operator applies after creating the namespace; it grants no access to Secrets of any other namespace.
+  - id: KSV-0056
+    paths: ["**/operator/rbac.yaml"]
+    statement: >-
+      Same scoping as KSV-0041: Services and NetworkPolicies are created in the preview namespaces only. The
+      NetworkPolicies are the deny-by-default policies of the preview, so this permission is what isolates it.

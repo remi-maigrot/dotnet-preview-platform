@@ -40,6 +40,10 @@
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
   </ItemGroup>
 
+  <ItemGroup Label="Kubernetes">
+    <PackageVersion Include="KubernetesClient" Version="21.0.8" />
+  </ItemGroup>
+
   <ItemGroup Label="Build">
     <PackageVersion Include="Cake.Frosting" Version="6.3.0" />
     <!-- Transitive pin: Cake.Frosting resolves 10.0.12, affected by GHSA-846f-f764-76mx. -->

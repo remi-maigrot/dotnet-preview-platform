@@ -3,6 +3,8 @@
     <Project Path="build/Build.csproj" />
   </Folder>
   <Folder Name="/src/">
+    <Project Path="src/Preview.Operator.Crds/Preview.Operator.Crds.csproj" />
+    <Project Path="src/Preview.Operator/Preview.Operator.csproj" />
     <Project Path="src/Sample.Api.Contracts/Sample.Api.Contracts.csproj" />
     <Project Path="src/Sample.Api/Sample.Api.csproj" />
     <Project Path="src/Sample.Application/Sample.Application.csproj" />
@@ -12,6 +14,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Architecture.Tests/Architecture.Tests.csproj" />
+    <Project Path="tests/Preview.Operator.Tests/Preview.Operator.Tests.csproj" />
     <Project Path="tests/Sample.Api.IntegrationTests/Sample.Api.IntegrationTests.csproj" />
     <Project Path="tests/Sample.Api.UnitTests/Sample.Api.UnitTests.csproj" />
   </Folder>

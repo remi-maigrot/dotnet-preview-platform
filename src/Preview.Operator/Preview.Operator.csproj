@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- Kubernetes operator for PreviewEnvironment resources. Reconciliation logic is cluster-free and unit tested. -->
+  <PropertyGroup>
+    <!-- CA1716 flags "Operator" (a Visual Basic keyword) in the namespace. These assemblies are not consumed from VB. -->
+    <NoWarn>$(NoWarn);CA1716</NoWarn>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">0.0.0-local</InformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Preview.Operator.Crds\Preview.Operator.Crds.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KubernetesClient" />
+    <PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Preview.Operator.Tests" />
+  </ItemGroup>
+</Project>

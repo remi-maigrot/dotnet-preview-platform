@@ -1,5 +1,8 @@
 name: CI
 
+# Every step of the pipeline lives in the Cake project (build/). This workflow only prepares the runner,
+# calls Cake and publishes what it produced, so the same build runs on a laptop and in CI.
+
 on:
   push:
     branches: [main]
@@ -11,6 +14,11 @@ permissions:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  KUBECONFORM_VERSION: v0.8.0
 
 jobs:
   lint-workflows:
@@ -32,8 +40,31 @@ jobs:
           advanced-security: false
           annotations: true
 
-  build:
-    name: Build and test
+  cross-platform:
+    # devctl runs on developer laptops: the code must build and pass its unit tests on every OS.
+    # Integration tests need a Linux Docker engine and run in the pipeline job below.
+    name: Unit tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Build and unit tests
+        run: dotnet run --project build -- --target Test --skip-integration-tests=true
+
+  pipeline:
+    name: Build, test, scan, package
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,7 +74,91 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
 
-      - run: dotnet restore
-      - run: dotnet build --configuration Release --no-restore
-      - run: dotnet test --configuration Release --no-build
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v4.3.1
+
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.1
+          cache: true
+
+      - name: Install kubeconform
+        run: |
+          base="https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}"
+          curl -fsSLO "$base/kubeconform-linux-amd64.tar.gz"
+          curl -fsSLO "$base/CHECKSUMS"
+          grep " kubeconform-linux-amd64.tar.gz$" CHECKSUMS | sha256sum --check --strict
+          sudo tar -xzf kubeconform-linux-amd64.tar.gz -C /usr/local/bin kubeconform
+          rm kubeconform-linux-amd64.tar.gz CHECKSUMS
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Run the CI pipeline
+        run: dotnet run --project build -- --target CI
+
+      - name: Test report
+        if: ${{ !cancelled() }}
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        with:
+          name: Tests
+          path: artifacts/test-results/**/*.trx
+          reporter: dotnet-trx
+          use-actions-summary: "true"
+          fail-on-empty: "true"
+
+      - name: Coverage summary
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f artifacts/coverage/SummaryGithub.md ]; then
+            cat artifacts/coverage/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: reports
+          path: |
+            artifacts/test-results
+            artifacts/coverage
+            artifacts/scan
+            artifacts/sbom
+          retention-days: 14
+
+      - name: Upload coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-badge
+          path: artifacts/badges/coverage.json
+          retention-days: 1
+
+  coverage-badge:
+    # Isolated job: the only one allowed to write to the repository, and only to the "badges" branch.
+    name: Publish coverage badge
+    needs: pipeline
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-badge
+
+      - name: Push to the badges branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          git init --quiet badges && cd badges
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp ../coverage.json .
+          git add coverage.json
+          git commit --quiet -m "chore: update coverage badge"
+          git push --force --quiet "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" HEAD:badges

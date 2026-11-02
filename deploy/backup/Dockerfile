@@ -2,7 +2,7 @@
 # Build from the repository root: docker build -f deploy/backup/Dockerfile .
 # pg_dump, pg_restore and age, with the two scripts run by the backup and restore-test CronJobs of the chart.
 # The PostgreSQL client matches the server major version (17) so dumps restore without conversion.
-FROM postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+FROM postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
 ARG VERSION=0.0.0-local
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="sample-backup" \

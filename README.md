@@ -8,7 +8,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 À chaque pull request, la CI démarre un cluster Kubernetes, et un opérateur écrit en C# y crée un namespace avec
-l'API, une base PostgreSQL et des données de test. Des tests de fumée et de charge tournent sur cet environnement,
+l'API, une base PostgreSQL et des données de test. Des smoke tests et de charge tournent sur cet environnement,
 et les résultats sont postés sur la pull request. En local, le même opérateur donne à chaque preview sa propre URL
 et la supprime quand sa durée de vie est écoulée.
 

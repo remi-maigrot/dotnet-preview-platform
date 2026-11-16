@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build from the repository root: docker build -f src/Sample.Migrator/Dockerfile .
 
-FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-noble@sha256:de4fe90a98845d75910b9769662465c84de1a934665c431279d1382b2bddc02b AS build
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0-noble@sha256:fe0fd4e93bd2fbb47c883b7a6369e5c8d3db8bf01cdc5981f6ee35fbdf3ff4fb AS build
 WORKDIR /src
 
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
@@ -17,7 +17,7 @@ RUN dotnet publish src/Sample.Migrator/Sample.Migrator.csproj \
       --configuration Release --no-restore --output /app \
       -p:InformationalVersion=$VERSION -p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled@sha256:3eb54ac708855f74b032de48e02437d15fb083b2aa593d49fdd512bb17f3e944 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled@sha256:1b234cef150624fe8cc7d027e8d742c0f03a16aef2484dc469eb8c872167255e AS runtime
 ARG VERSION=0.0.0-local
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="sample-migrator" \

@@ -2,7 +2,7 @@
 # Build from the repository root: docker build -f deploy/helm/Dockerfile .
 # helm plus the sample-api chart of the same commit. The preview operator runs it as a Job, so a preview always
 # deploys the chart that was reviewed with the code.
-FROM alpine/helm:4.3.1@sha256:e3f8d5c462d75470fbb1fce79ad5c20063657096d1f98c0fcea869e2600e2e5e
+FROM alpine/helm:4.3.2@sha256:a3b9d617c0c30a6c488cebb429c4ba83995a26dc2184599af5fd408a361b2e67
 ARG VERSION=0.0.0-local
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="sample-deployer" \
